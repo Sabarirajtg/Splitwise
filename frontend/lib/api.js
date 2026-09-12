@@ -11,7 +11,6 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  login: (name, pin) => request("/auth/login", { method: "POST", body: JSON.stringify({ name, pin }) }),
   getUser: (id) => request(`/users/${id}`),
   currencies: () => request("/currencies"),
   fx: (base) => request(`/fx/${base}`),

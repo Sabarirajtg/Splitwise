@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { api, getSession, clearSession, money, CURRENCIES } from "../../lib/api";
+import { signOut } from "next-auth/react";
 
 export default function Groups() {
   const router = useRouter();
@@ -62,7 +63,7 @@ export default function Groups() {
 
   function logout() {
     clearSession();
-    router.push("/login");
+    signOut({ redirect: false }).then(() => router.push("/login"));
   }
 
   return (

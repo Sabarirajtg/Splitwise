@@ -13,19 +13,38 @@ app.use(express.json());
 const CURRENCIES = ["USD", "EUR", "GBP", "INR", "THB", "JPY", "AUD", "CAD", "SGD", "AED"];
 
 // ---------- Auth ----------
-app.post("/api/auth/login", async (req, res) => {
+
+// Called server-side by the Next.js NextAuth callback (never from the browser directly),
+// so it's protected by a shared secret instead of a user-facing password.
+app.post("/api/auth/google", async (req, res) => {
   try {
-    const { name, pin } = req.body;
-    if (!name || !name.trim()) return res.status(400).json({ error: "Enter your name" });
-    if (!pin || pin.length < 4) return res.status(400).json({ error: "PIN must be at least 4 digits" });
-    const nameLower = name.trim().toLowerCase();
-    let user = await User.findOne({ nameLower });
-    if (user) {
-      if (user.pin !== pin) return res.status(401).json({ error: "Wrong PIN for this name" });
-    } else {
-      user = await User.create({ _id: nanoid(10), name: name.trim(), nameLower, pin });
+    const secret = req.headers["x-internal-secret"];
+    if (!secret || secret !== process.env.INTERNAL_API_SECRET) {
+      return res.status(401).json({ error: "Unauthorized" });
     }
-    res.json({ id: user._id, name: user.name });
+    const { googleId, email, name, avatarUrl } = req.body;
+    if (!googleId || !email) return res.status(400).json({ error: "Missing Google account details" });
+
+    let user = await User.findOne({ googleId });
+    if (!user) {
+      // Also check by email in case they previously signed up with name+PIN using the same email pattern
+      user = await User.findOne({ email });
+      if (user) {
+        user.googleId = googleId;
+        user.avatarUrl = avatarUrl;
+        await user.save();
+      } else {
+        user = await User.create({
+          _id: nanoid(10), name: name || email.split("@")[0], email, googleId, avatarUrl
+        });
+      }
+    } else {
+      // keep name/avatar fresh in case they changed on Google's side
+      user.name = name || user.name;
+      user.avatarUrl = avatarUrl;
+      await user.save();
+    }
+    res.json({ id: user._id, name: user.name, avatarUrl: user.avatarUrl || null });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Server error" });
@@ -35,7 +54,7 @@ app.post("/api/auth/login", async (req, res) => {
 app.get("/api/users/:id", async (req, res) => {
   const user = await User.findById(req.params.id);
   if (!user) return res.status(404).json({ error: "Not found" });
-  res.json({ id: user._id, name: user.name });
+  res.json({ id: user._id, name: user.name, avatarUrl: user.avatarUrl || null });
 });
 
 // ---------- Currencies / FX ----------
