@@ -27,6 +27,32 @@ export const api = {
   joinGroup: (groupId, userId) => request(`/groups/${groupId}/join`, { method: "POST", body: JSON.stringify({ userId }) }),
   getGroup: (id) => request(`/groups/${id}`),
 
+
+  updateGroupSettings: (id, payload) =>
+    requestNext(`/api/groups/${id}/settings`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  updateSimplification: (id, payload) =>
+    requestNext(`/api/groups/${id}/simplification`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  createInvite: (id, payload) =>
+    requestNext(`/api/groups/${id}/invite`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  revokeInvite: (id, payload) =>
+    requestNext(`/api/groups/${id}/invite`, {
+      method: "DELETE",
+      body: JSON.stringify(payload),
+    }),
+
+
   groupExpenses: (id) => request(`/groups/${id}/expenses`),
   addExpense: (groupId, payload) => request(`/groups/${groupId}/expenses`, { method: "POST", body: JSON.stringify(payload) }),
   updateExpense: (id, payload) => request(`/expenses/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
