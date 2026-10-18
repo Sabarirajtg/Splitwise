@@ -210,12 +210,190 @@ function ActivityTab({ expenses, settlements, memberName }) {
 }
 
 function InviteSheet({ group, user, invite, setInvite, onClose }) {
- const [copied,setCopied]=useState(false),[busy,setBusy]=useState(false),[expiresAt,setExpiresAt]=useState(""),[revoked,setRevoked]=useState(false);
- const currentToken = revoked ? null : (invite?.token || group.inviteToken);
- async function ensureInvite(){const result=await api.createInvite(group.id,{userId:user.id,expiresAt:expiresAt?new Date(expiresAt).toISOString():undefined});setInvite(result);setRevoked(false);return result.token;}
- async function copyLink(){setBusy(true);try{const token=(expiresAt?await ensureInvite():currentToken)||await ensureInvite();const link=`${window.location.origin}/invite/${token}`;await navigator.clipboard.writeText(link);setCopied(true);showToast("Invite link copied successfully!");}catch(e){showToast(e.message||"Could not copy invite link","error");}finally{setBusy(false);}}
- async function shareLink(){setBusy(true);try{const token=(expiresAt?await ensureInvite():currentToken)||await ensureInvite();const url=`${window.location.origin}/invite/${token}`;if(navigator.share)await navigator.share({title:`Join ${group.name}`,text:`Join my SplitShare group: ${group.name}`,url});else{await navigator.clipboard.writeText(url);setCopied(true);showToast("Invite link copied successfully!");}}catch(e){if(e.name!=="AbortError")showToast(e.message||"Could not share invite link","error");}finally{setBusy(false);}}
- return <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="sheet"><div className="sheet-handle"/><h3 style={{marginBottom:12}}>Invite friends to {group.name}</h3><p className="muted small">Anyone with this link can request to join. The group’s expenses and balances are not exposed by the invitation preview.</p><div className="field"><label>Optional expiration</label><input type="datetime-local" value={expiresAt} onChange={e=>setExpiresAt(e.target.value)}/></div>{currentToken?<div className="card" style={{fontSize:13,wordBreak:"break-all"}}>{typeof window!=="undefined"?window.location.origin+"/invite/"+currentToken:"Invitation link"}</div>:<p className="muted small">Generate a unique link to invite friends.</p>}<button className="btn-primary" style={{marginTop:10}} disabled={busy} onClick={copyLink}>{busy?"Preparing…":copied?"Copy invite link again":"Copy invite link"}</button><button style={{width:"100%",marginTop:8}} disabled={busy} onClick={shareLink}>Share link…</button><button style={{width:"100%",marginTop:8}} disabled={busy} onClick={async()=>{setBusy(true);try{const token=await ensureInvite();setCopied(false);showToast("Invitation link regenerated");}catch(e){showToast(e.message||"Could not regenerate link","error");}finally{setBusy(false);}}}>Regenerate link</button><button className="btn-danger-text" style={{width:"100%",marginTop:8}} disabled={busy||!currentToken} onClick={async()=>{setBusy(true);try{await api.revokeInvite(group.id,{userId:user.id});setInvite(null);setRevoked(true);setCopied(false);showToast("Invitation revoked");}catch(e){showToast(e.message||"Could not revoke link","error");}finally{setBusy(false);}}}>Revoke link</button><button className="linkbtn" onClick={onClose} style={{display:"block",margin:"18px auto 0"}}>Close</button></div></div>;
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [expiresAt, setExpiresAt] = useState("");
+  const [revoked, setRevoked] = useState(false);
+
+  const currentToken = revoked
+    ? null
+    : invite?.token || group.inviteToken;
+
+  async function ensureInvite() {
+    const result = await api.createInvite(group.id, {
+      userId: user.id,
+      expiresAt: expiresAt
+        ? new Date(expiresAt).toISOString()
+        : undefined,
+    });
+
+    setInvite(result);
+    setRevoked(false);
+    return result.token;
+  }
+
+  async function getShareableLink() {
+    const token =
+      (expiresAt ? await ensureInvite() : currentToken) ||
+      (await ensureInvite());
+
+    return `${window.location.origin}/invite/${token}`;
+  }
+
+  async function copyLink() {
+    setBusy(true);
+
+    try {
+      const link = await getShareableLink();
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      showToast("Invite link copied successfully!");
+    } catch (error) {
+      showToast(error.message || "Could not copy invite link", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function shareLink() {
+    setBusy(true);
+
+    try {
+      const url = await getShareableLink();
+
+      if (navigator.share) {
+        await navigator.share({
+          title: `Join ${group.name}`,
+          text: `Join my SplitShare group: ${group.name}`,
+          url,
+        });
+      } else {
+        await navigator.clipboard.writeText(url);
+        setCopied(true);
+        showToast("Invite link copied successfully!");
+      }
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        showToast(error.message || "Could not share invite link", "error");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function regenerateLink() {
+    setBusy(true);
+
+    try {
+      await ensureInvite();
+      setCopied(false);
+      showToast("Invitation link regenerated");
+    } catch (error) {
+      showToast(error.message || "Could not regenerate link", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeLink() {
+    setBusy(true);
+
+    try {
+      await api.revokeInvite(group.id, { userId: user.id });
+      setInvite(null);
+      setRevoked(true);
+      setCopied(false);
+      showToast("Invitation revoked");
+    } catch (error) {
+      showToast(error.message || "Could not revoke link", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="overlay"
+      onClick={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <div className="sheet">
+        <div className="sheet-handle" />
+        <h3 style={{ marginBottom: 12 }}>
+          Invite friends to {group.name}
+        </h3>
+        <p className="muted small">
+          Anyone with this link can request to join. The invitation
+          preview does not expose expenses or balances.
+        </p>
+
+        <div className="field">
+          <label>Optional expiration</label>
+          <input
+            type="datetime-local"
+            value={expiresAt}
+            onChange={(event) => setExpiresAt(event.target.value)}
+          />
+        </div>
+
+        {currentToken ? (
+          <div
+            className="card"
+            style={{ fontSize: 13, wordBreak: "break-all" }}
+          >
+            {typeof window !== "undefined"
+              ? `${window.location.origin}/invite/${currentToken}`
+              : "Invitation link"}
+          </div>
+        ) : (
+          <p className="muted small">
+            Generate a unique link to invite friends.
+          </p>
+        )}
+
+        <button
+          className="btn-primary"
+          style={{ marginTop: 10 }}
+          disabled={busy}
+          onClick={copyLink}
+        >
+          {busy
+            ? "Preparing…"
+            : copied
+              ? "Copy invite link again"
+              : "Copy invite link"}
+        </button>
+        <button
+          style={{ width: "100%", marginTop: 8 }}
+          disabled={busy}
+          onClick={shareLink}
+        >
+          Share link…
+        </button>
+        <button
+          style={{ width: "100%", marginTop: 8 }}
+          disabled={busy}
+          onClick={regenerateLink}
+        >
+          Regenerate link
+        </button>
+        <button
+          className="btn-danger-text"
+          style={{ width: "100%", marginTop: 8 }}
+          disabled={busy || !currentToken}
+          onClick={revokeLink}
+        >
+          Revoke link
+        </button>
+        <button
+          className="linkbtn"
+          onClick={onClose}
+          style={{ display: "block", margin: "18px auto 0" }}
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
