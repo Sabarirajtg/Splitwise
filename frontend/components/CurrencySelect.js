@@ -29,17 +29,6 @@ export default function CurrencySelect({
   return (
     <div className="currency-select">
       {label && <label>{label}</label>}
-
-      {showSearch && (
-        <input
-          aria-label={label ? `Search ${label.toLowerCase()}` : "Search currencies"}
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search by currency name, code, or symbol…"
-          disabled={disabled}
-        />
-      )}
-
       <select
         aria-label={label || "Currency"}
         value={value}
