@@ -413,6 +413,7 @@ function GroupSettings({
       <h3 style={{ fontSize: 15, marginBottom: 12 }}>Group settings</h3>
       <CurrencySelect
         label="Base currency · group totals and balances"
+        showSearch={false}
         value={settings.baseCurrency}
         onChange={(value) =>
           setSettings((previous) => ({ ...previous, baseCurrency: value }))
@@ -422,6 +423,7 @@ function GroupSettings({
       <div style={{ height: 12 }} />
       <CurrencySelect
         label="Spending currency · default for new expenses"
+        showSearch={false}
         value={settings.spendingCurrency}
         onChange={(value) =>
           setSettings((previous) => ({
