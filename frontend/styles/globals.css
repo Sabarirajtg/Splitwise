@@ -510,3 +510,30 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
   html, body, #__next, .container, .topbar, .screen, .card, .tabs, .bottomnav, .sheet,
   input, select, textarea, button, .pill, .avatar, .toast, .theme-toggle { transition: none !important; }
 }
+
+
+/* Follow-up polish: remove leftover olive chart colors and avoid header actions */
+:root { --gradient: linear-gradient(120deg, #8B5CF6, #D946EF); }
+.horizontal-chart-track, .member-bar-track { background: #292333 !important; }
+.horizontal-chart-fill { background: var(--gradient) !important; }
+.date-chart-bar { background: linear-gradient(180deg, #D946EF, #8B5CF6) !important; }
+.date-chart-bar.peak { background: linear-gradient(180deg, #E9D5FF, #D946EF) !important; box-shadow: 0 0 18px rgba(217,70,239,.18) !important; }
+.date-chart-value { color: #E9D5FF !important; }
+:root[data-theme="light"] .horizontal-chart-track,
+:root[data-theme="light"] .member-bar-track { background: #EEE8F7 !important; }
+:root[data-theme="light"] .horizontal-chart-label { color: #40334F !important; }
+:root[data-theme="light"] .horizontal-chart-value { color: #241D30 !important; }
+:root[data-theme="light"] .date-chart-bar { background: linear-gradient(180deg, #D946EF, #8B5CF6) !important; }
+:root[data-theme="light"] .date-chart-label { color: #5B506A !important; }
+:root[data-theme="light"] .date-chart-value { color: #6D28D9 !important; }
+:root[data-theme="light"] .tab.active { color: #24122F !important; font-weight: 800; text-shadow: none; }
+:root[data-theme="light"] .tab:not(.active) { color: #51445F !important; }
+:root[data-theme="light"] .tabs button { border-color: #E0D5F0; }
+:root[data-theme="light"] .btn-primary, :root[data-theme="light"] .fab { color: #FFFFFF; }
+.theme-toggle {
+  left: max(14px, calc((100vw - 600px) / 2 + 14px)) !important;
+  right: auto !important;
+}
+@media (max-width: 700px) {
+  .theme-toggle { top: max(12px, env(safe-area-inset-top)) !important; left: 12px !important; }
+}
