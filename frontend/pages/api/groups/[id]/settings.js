@@ -1,0 +1,1 @@
+import {proxyAuthenticated} from "../../../../lib/serverApi";export default function handler(req,res){if(req.method!=="PUT")return res.status(405).json({error:"Method not allowed"});return proxyAuthenticated(req,res,`/groups/${req.query.id}/settings`);}
