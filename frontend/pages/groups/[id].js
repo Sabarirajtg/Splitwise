@@ -222,7 +222,7 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
   const members = group.members;
   const [desc, setDesc] = useState(editing ? editing.desc : "");
   const [amount, setAmount] = useState(editing ? editing.amount : "");
-  const [currency, setCurrency] = useState(editing ? editing.currency : group.baseCurrency);
+  const [currency, setCurrency] = useState(editing ? editing.currency : (group.spendingCurrency || group.baseCurrency));
   const [paidBy, setPaidBy] = useState(editing ? editing.paidBy : user.id);
   const [date, setDate] = useState(editing ? editing.date : todayISO());
   const [recurring, setRecurring] = useState(editing ? (editing.recurring || "") : "");
