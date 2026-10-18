@@ -30,7 +30,8 @@ export default function Login() {
     }
     if (googleSession.appUserId) {
       setSession({ id: googleSession.appUserId, name: googleSession.appUserName });
-      router.push("/groups");
+      const next = typeof router.query.next === "string" && router.query.next.startsWith("/") ? router.query.next : "/groups";
+      router.push(next);
     }
   }, [status, googleSession]);
 

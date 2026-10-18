@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { api, getSession, money, initials, todayISO, CURRENCIES } from "../../lib/api";
 import { avatarColor } from "../../lib/colors";
+import CurrencySelect from "../../components/CurrencySelect";
+import { showToast } from "../../lib/toast";
+import { expenseIcon, summarizeExpenses } from "../../lib/expense";
 
 export default function GroupDetail() {
   const router = useRouter();
@@ -14,6 +17,9 @@ export default function GroupDetail() {
   const [tab, setTab] = useState("expenses");
   const [sheet, setSheet] = useState(null);
   const [editingExpense, setEditingExpense] = useState(null);
+  const [settings, setSettings] = useState(null);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [invite, setInvite] = useState(null);
 
   useEffect(() => {
     const session = getSession();
@@ -31,9 +37,11 @@ export default function GroupDetail() {
       api.getGroup(id), api.groupExpenses(id), api.groupSettlements(id), api.balances(id)
     ]);
     setGroup(g); setExpenses(exps); setSettlements(setl); setBalData(bal);
+    setSettings({ baseCurrency: g.baseCurrency, spendingCurrency: g.spendingCurrency || g.baseCurrency });
+    if (!g.currencyConfigured) setSheet("settings");
   }
 
-  if (!group) return <div className="container"><div className="screen"><p className="muted small">Loading…</p></div></div>;
+  if (!group) return <div className="container"><div className="screen"><div className="skeleton skeleton-card"/><div className="skeleton skeleton-card"/><div className="skeleton skeleton-card"/></div></div>;
 
   const memberName = (uid) => (group.members.find(m => m.id === uid) || {}).name || "?";
 
@@ -42,14 +50,18 @@ export default function GroupDetail() {
       <div className="topbar">
         <button className="btn-ghost" onClick={() => router.push("/groups")}>‹ Groups</button>
         <h1 style={{ fontSize: 16.5 }}>{group.name}</h1>
-        <button className="btn-ghost" onClick={() => setSheet("invite")}>Invite</button>
+        <button className="btn-ghost" onClick={() => { setInvite(null); setSheet("invite"); }}>Invite Friends</button>
       </div>
       <div className="screen">
         <div className="tabs">
+          <button className={`tab ${tab === "overview" ? "active" : ""}`} onClick={() => setTab("overview")}>Overview</button>
           <button className={`tab ${tab === "expenses" ? "active" : ""}`} onClick={() => setTab("expenses")}>Expenses</button>
           <button className={`tab ${tab === "balances" ? "active" : ""}`} onClick={() => setTab("balances")}>Balances</button>
           <button className={`tab ${tab === "activity" ? "active" : ""}`} onClick={() => setTab("activity")}>Activity</button>
+          <button className={`tab ${tab === "settings" ? "active" : ""}`} onClick={() => setTab("settings")}>Settings</button>
         </div>
+
+        {tab === "overview" && <ExpensesOverview group={group} expenses={expenses} user={user} />}
 
         {tab === "expenses" && (
           expenses.length === 0
@@ -65,7 +77,7 @@ export default function GroupDetail() {
                 <div key={e.id} className="card card-tap" onClick={() => { setEditingExpense(e); setSheet("expense"); }}>
                   <div className="row">
                     <div>
-                      <h3 style={{ fontSize: 14.5 }}>{e.desc}</h3>
+                      <h3 style={{ fontSize: 14.5 }}><span aria-hidden="true" style={{ display: "inline-block", width: 26 }}>{expenseIcon(e.desc)}</span>{e.desc}</h3>
                       <p className="small muted" style={{ marginTop: 3 }}>
                         {e.date} · paid by {memberName(e.paidBy)}{e.recurring ? ` · repeats ${e.recurring}` : ""}
                       </p>
@@ -93,6 +105,8 @@ export default function GroupDetail() {
           />
         )}
 
+        {tab === "settings" && settings && <GroupSettings group={group} user={user} settings={settings} setSettings={setSettings} saving={savingSettings} onSave={async () => { setSavingSettings(true); try { await api.updateGroupSettings(id, { userId: user.id, ...settings }); const g = await api.getGroup(id); setGroup(g); setSettings({ baseCurrency:g.baseCurrency, spendingCurrency:g.spendingCurrency || g.baseCurrency }); await loadAll(); showToast("Changes saved successfully!"); } catch(e) { showToast(e.message || "Could not save settings", "error"); } finally { setSavingSettings(false); } }} onSimplification={async enabled => { try { await api.updateSimplification(id,{userId:user.id,enabled}); await loadAll(); showToast("Simplification preference updated"); } catch(e) { showToast(e.message || "Could not update preference","error"); } }} />}
+
         {tab === "activity" && (
           <ActivityTab expenses={expenses} settlements={settlements} memberName={memberName} />
         )}
@@ -100,7 +114,8 @@ export default function GroupDetail() {
 
       <button className="fab" onClick={() => { setEditingExpense(null); setSheet("expense"); }}>+</button>
 
-      {sheet === "invite" && <InviteSheet group={group} onClose={() => setSheet(null)} />}
+      {sheet === "invite" && <InviteSheet group={group} user={user} invite={invite} setInvite={setInvite} onClose={() => setSheet(null)} />}
+      {sheet === "settings" && settings && <div className="overlay"><div className="sheet"><div className="sheet-handle" /><h3 style={{marginBottom:14}}>Configure group currencies</h3><p className="muted small">Choose how group totals are consolidated and which currency is used by default for new expenses.</p><GroupSettings group={group} user={user} settings={settings} setSettings={setSettings} saving={savingSettings} onSave={async()=>{setSavingSettings(true);try{await api.updateGroupSettings(id,{userId:user.id,...settings});const g=await api.getGroup(id);setGroup(g);setSettings({baseCurrency:g.baseCurrency,spendingCurrency:g.spendingCurrency||g.baseCurrency});setSheet(null);await loadAll();showToast("Changes saved successfully!");}catch(e){showToast(e.message||"Could not save settings","error");}finally{setSavingSettings(false);}}} onSimplification={async enabled=>{try{await api.updateSimplification(id,{userId:user.id,enabled});await loadAll();showToast("Simplification preference updated");}catch(e){showToast(e.message||"Could not update preference","error");}}} onCancel={()=>setSheet(null)} /></div></div>}
       {sheet === "expense" && (
         <ExpenseSheet
           group={group} user={user} editing={editingExpense}
@@ -111,6 +126,19 @@ export default function GroupDetail() {
       )}
     </div>
   );
+}
+
+function ExpensesOverview({ group, expenses, user }) {
+ const summary = summarizeExpenses(expenses, group.members, group.baseCurrency);
+ const max = Math.max(1, ...Object.values(summary.totals));
+ return <div><div className="grid-summary"><div className="card"><p className="small muted">Total group expenses</p><h2>{money(summary.total,group.baseCurrency)}</h2></div><div className="card"><p className="small muted">My share</p><h2>{money(summary.totals[user.id]||0,group.baseCurrency)}</h2></div></div><div className="card"><h3 style={{fontSize:14.5,marginBottom:12}}>Spending by member</h3>{group.members.length===0?<p className="muted small">No members yet.</p>:group.members.map(m=><div className="member-bar-row" key={m.id}><span>{m.name}</span><div className="member-bar-track"><div className="member-bar-fill" style={{width:`${Math.max(0,(summary.totals[m.id]||0)/max*100)}%`}} /></div><b>{money(summary.totals[m.id]||0,group.baseCurrency)}</b></div>)}</div><div className="card"><h3 style={{fontSize:14.5}}>Original-currency totals</h3><p className="small muted">These amounts remain in their transaction currencies and are not added together.</p><div className="currency-breakdown">{Object.entries(summary.byCurrency).map(([cur,amount])=><span className="pill pill-neutral" key={cur}>{money(amount,cur)}</span>)}</div></div></div>;
+}
+
+function GroupSettings({group,user,settings,setSettings,saving,onSave,onSimplification,onCancel}) {
+ const original={baseCurrency:group.baseCurrency,spendingCurrency:group.spendingCurrency||group.baseCurrency};
+ const dirty=settings && (settings.baseCurrency!==original.baseCurrency || settings.spendingCurrency!==original.spendingCurrency);
+ const optedOut=(group.simplificationOptOutIds||[]).includes(user.id);
+ return <div className="card"><h3 style={{fontSize:15,marginBottom:12}}>Group settings</h3><CurrencySelect label="Base currency · group totals and balances" value={settings.baseCurrency} onChange={v=>setSettings(p=>({...p,baseCurrency:v}))} disabled={saving}/><div style={{height:12}}/><CurrencySelect label="Spending currency · default for new expenses" value={settings.spendingCurrency} onChange={v=>setSettings(p=>({...p,spendingCurrency:v}))} disabled={saving}/><p className="small muted" style={{marginTop:10}}>Changing the base currency recalculates consolidated values. Each expense keeps its original transaction currency and saved exchange-rate snapshot.</p>{dirty&&<button className="btn-primary" disabled={saving} onClick={onSave} style={{marginTop:10}}>{saving?"Saving…":"Save Changes"}</button>}{onCancel&&<button className="linkbtn" onClick={onCancel} style={{display:"block",margin:"14px auto 0"}}>Cancel</button>}<div className="divider" style={{margin:"20px 0",borderTop:"1px solid var(--border)"}}/><h3 style={{fontSize:14.5,marginBottom:8}}>Debt simplification</h3><p className="small muted">Opting out keeps your obligations visible and prioritizes direct settlement routes. It never removes your debt or credit from the group ledger.</p><label className="setting-toggle"><input type="checkbox" checked={!optedOut} onChange={e=>onSimplification(e.target.checked)} style={{width:"auto"}}/> Participate in suggested simplification</label></div>;
 }
 
 function BalancesTab({ group, balData, user, memberName, onSettle }) {

@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { api, getSession, clearSession, money, CURRENCIES } from "../../lib/api";
 import { signOut } from "next-auth/react";
+import CurrencySelect from "../../components/CurrencySelect";
+import { showToast } from "../../lib/toast";
 
 export default function Groups() {
   const router = useRouter();
@@ -10,7 +12,8 @@ export default function Groups() {
   const [balances, setBalances] = useState({});
   const [sheet, setSheet] = useState(null);
   const [newName, setNewName] = useState("");
-  const [newCurrency, setNewCurrency] = useState("USD");
+  const [newCurrency, setNewCurrency] = useState("INR");
+  const [newSpendingCurrency, setNewSpendingCurrency] = useState("INR");
   const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState({});
   const [busy, setBusy] = useState(false);
@@ -40,11 +43,11 @@ export default function Groups() {
     if (!newName.trim()) { setError({ group: "Enter a group name" }); return; }
     setBusy(true);
     try {
-      const g = await api.createGroup(newName, newCurrency, user.id);
+      const g = await api.createGroup(newName, newCurrency, user.id, newSpendingCurrency);
       setSheet(null); setNewName("");
       router.push(`/groups/${g.id}`);
     } catch (e) {
-      setError({ group: e.message });
+      setError({ group: e.message }); showToast(e.message || "Could not create group", "error");
     } finally { setBusy(false); }
   }
 
@@ -57,7 +60,7 @@ export default function Groups() {
       setSheet(null); setJoinCode("");
       router.push(`/groups/${g.id}`);
     } catch (e) {
-      setError({ join: e.message });
+      setError({ join: e.message }); showToast(e.message || "Could not join group", "error");
     } finally { setBusy(false); }
   }
 
@@ -73,7 +76,7 @@ export default function Groups() {
         <button className="btn-ghost" onClick={logout}>Log out</button>
       </div>
       <div className="screen">
-        {groups === null && <p className="muted small">Loading…</p>}
+        {groups === null && <><div className="skeleton skeleton-card"/><div className="skeleton skeleton-card"/><div className="skeleton skeleton-card"/></>}
         {groups && groups.length === 0 && (
           <div className="empty">No groups yet.<br />Create one or join with a group code.</div>
         )}
