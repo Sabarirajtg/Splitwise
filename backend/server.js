@@ -118,7 +118,25 @@ app.put("/api/groups/:id/settings", async (req,res)=>{
  if(!group)return res.status(404).json({error:"Group not found"});
  if(!userId||!group.memberIds.includes(userId))return res.status(403).json({error:"Only group members can update settings"});
  if(!CURRENCIES.includes(baseCurrency)||!CURRENCIES.includes(spendingCurrency))return res.status(400).json({error:"Select valid currencies"});
- if(baseCurrency!==group.baseCurrency){const expenses=await Expense.find({groupId:group._id});for(const e of expenses){let rates=e.fxRates;if(!rates||!rates[baseCurrency])rates=await getRates(e.currency);const rate=e.currency===baseCurrency?1:rates[baseCurrency];if(!rate)return res.status(422).json({error:`No conversion rate for ${e.currency} to ${baseCurrency}`});e.amountInBase=Math.round(e.amount*rate*100)/100;e.fxRate=rate;e.fxRates={...rates,[e.currency]:1};await e.save();}}
+ if(baseCurrency!==group.baseCurrency){
+  const expenses=await Expense.find({groupId:group._id});
+  const converted=[];
+  for(const e of expenses){
+   let rates=e.fxRates;
+   if(!rates||!rates[baseCurrency]) rates=await getRates(e.currency);
+   const rate=e.currency===baseCurrency?1:rates[baseCurrency];
+   if(!rate)return res.status(422).json({error:`No conversion rate for ${e.currency} to ${baseCurrency}`});
+   converted.push({expense:e,rate,rates,amountInBase:Math.round(e.amount*rate*100)/100});
+  }
+  const settlements=await Settlement.find({groupId:group._id});
+  const convertedSettlements=[];
+  for(const item of settlements){
+   const amount=item.currency===baseCurrency?item.amount:await convert(item.amount,item.currency,baseCurrency);
+   convertedSettlements.push({item,amount});
+  }
+  for(const item of converted){item.expense.amountInBase=item.amountInBase;item.expense.fxRate=item.rate;item.expense.fxRates={...item.rates,[item.expense.currency]:1};await item.expense.save();}
+  for(const entry of convertedSettlements){entry.item.amount=entry.amount;entry.item.currency=baseCurrency;await entry.item.save();}
+ }
  group.baseCurrency=baseCurrency;group.spendingCurrency=spendingCurrency;await group.save();res.json({id:group._id,baseCurrency,spendingCurrency,currencyConfigured:true});
  } catch(e){res.status(500).json({error:e.message||"Could not save settings"});}
 });
