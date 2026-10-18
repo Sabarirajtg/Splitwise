@@ -191,7 +191,8 @@ app.put("/api/expenses/:id", async (req, res) => {
     const { desc, amount, currency, paidBy, date, recurring, splitMethod, splits } = req.body;
     if (!CURRENCIES.includes(currency)||!group.memberIds.includes(paidBy)) return res.status(400).json({error:"Invalid currency or payer"});
     if (!Array.isArray(splits)||!splits.length||splits.some(x=>!group.memberIds.includes(x.userId)||!Number.isFinite(Number(x.amount))||Number(x.amount)<0)) return res.status(400).json({error:"Invalid expense splits"});
-    const fx = await convertWithSnapshot(Number(amount),currency,group.baseCurrency);
+    const sameAmountAndCurrency = expense.amount === Number(amount) && expense.currency === currency && expense.amountInBase != null;
+    const fx = sameAmountAndCurrency ? { amountInBase: expense.amountInBase, rate: expense.fxRate, rates: expense.fxRates } : await convertWithSnapshot(Number(amount),currency,group.baseCurrency);
     Object.assign(expense,{desc,amount:Number(amount),currency,amountInBase:fx.amountInBase,fxRate:fx.rate,fxRates:fx.rates,paidBy,date,recurring:recurring||null,splitMethod,splits});
     await expense.save();
     res.json(mapExpense(expense));
@@ -218,7 +219,7 @@ app.post("/api/groups/:id/recurring/process", async (req, res) => {
       const newDate = next.toISOString().slice(0, 10);
       await Expense.create({
         _id: nanoid(10), groupId: t.groupId, desc: t.desc, amount: t.amount, currency: t.currency,
-        amountInBase: t.amountInBase, paidBy: t.paidBy, splits: t.splits, date: newDate,
+        amountInBase: t.amountInBase, fxRate: t.fxRate, fxRates: t.fxRates, paidBy: t.paidBy, splits: t.splits, date: newDate,
         recurring: null, splitMethod: t.splitMethod, lastGenerated: newDate, generatedFrom: t._id
       });
       t.lastGenerated = newDate;
