@@ -92,7 +92,6 @@ export default function GroupDetail() {
           <div className="skeleton-tabs">
             {Array.from({ length: 5 }, (_, index) => <div className="skeleton skeleton-tab" key={index} />)}
           </div>
-          <div className="skeleton skeleton-section-title" />
           <div className="skeleton skeleton-card skeleton-expense-card">
             <div className="skeleton skeleton-avatar" />
             <div className="skeleton-expense-copy">
