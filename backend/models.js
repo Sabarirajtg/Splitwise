@@ -13,8 +13,12 @@ const GroupSchema = new Schema({
   _id: { type: String },
   name: { type: String, required: true },
   baseCurrency: { type: String, required: true },
+  spendingCurrency: { type: String, default: null },
   memberIds: [{ type: String }],
-  createdBy: { type: String }
+  createdBy: { type: String },
+  simplificationOptOutIds: { type: [String], default: [] },
+  inviteToken: { type: String, default: null, index: true },
+  inviteExpiresAt: { type: Date, default: null }
 }, { timestamps: true });
 
 const SplitSchema = new Schema({
@@ -30,6 +34,8 @@ const ExpenseSchema = new Schema({
   amount: Number,
   currency: String,
   amountInBase: Number,
+  fxRate: Number,
+  fxRates: { type: Schema.Types.Mixed, default: null },
   paidBy: String,
   splits: [SplitSchema],
   date: String,

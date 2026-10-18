@@ -1,0 +1,31 @@
+name: Validate SplitShare
+on:
+  push:
+    branches: [feat/group-expense-enhancements]
+  pull_request:
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --prefix backend
+      - run: npm test --prefix backend
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --prefix frontend
+      - run: npm run build --prefix frontend
+        env:
+          NEXTAUTH_SECRET: test-secret-for-build
+          NEXTAUTH_URL: http://localhost:3000
+          GOOGLE_CLIENT_ID: test-client-id
+          GOOGLE_CLIENT_SECRET: test-client-secret
+          INTERNAL_API_SECRET: test-internal-secret
+          NEXT_PUBLIC_API_URL: http://localhost:4000

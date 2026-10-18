@@ -10,15 +10,48 @@ async function request(path, options = {}) {
   return data;
 }
 
+async function requestNext(path, options = {}) {
+  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...options });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Something went wrong");
+  return data;
+}
+
 export const api = {
   getUser: (id) => request(`/users/${id}`),
   currencies: () => request("/currencies"),
   fx: (base) => request(`/fx/${base}`),
 
   userGroups: (userId) => request(`/users/${userId}/groups`),
-  createGroup: (name, baseCurrency, userId) => request("/groups", { method: "POST", body: JSON.stringify({ name, baseCurrency, userId }) }),
+  createGroup: (name, baseCurrency, userId, spendingCurrency = baseCurrency) => request("/groups", { method: "POST", body: JSON.stringify({ name, baseCurrency, spendingCurrency, userId }) }),
   joinGroup: (groupId, userId) => request(`/groups/${groupId}/join`, { method: "POST", body: JSON.stringify({ userId }) }),
   getGroup: (id) => request(`/groups/${id}`),
+
+
+  updateGroupSettings: (id, payload) =>
+    requestNext(`/api/groups/${id}/settings`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  updateSimplification: (id, payload) =>
+    requestNext(`/api/groups/${id}/simplification`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  createInvite: (id, payload) =>
+    requestNext(`/api/groups/${id}/invite`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  revokeInvite: (id, payload) =>
+    requestNext(`/api/groups/${id}/invite`, {
+      method: "DELETE",
+      body: JSON.stringify(payload),
+    }),
+
 
   groupExpenses: (id) => request(`/groups/${id}/expenses`),
   addExpense: (groupId, payload) => request(`/groups/${groupId}/expenses`, { method: "POST", body: JSON.stringify(payload) }),
@@ -47,7 +80,22 @@ export function clearSession() {
 
 export const CURRENCIES = ["USD", "EUR", "GBP", "INR", "THB", "JPY", "AUD", "CAD", "SGD", "AED"];
 
-const SYMBOLS = { USD: "$", EUR: "€", GBP: "£", INR: "₹", THB: "฿", JPY: "¥", AUD: "A$", CAD: "C$", SGD: "S$", AED: "د.إ" };
+export const CURRENCY_META = {
+  USD: { name: "US Dollar", symbol: "$" },
+  EUR: { name: "Euro", symbol: "€" },
+  GBP: { name: "British Pound", symbol: "£" },
+  INR: { name: "Indian Rupee", symbol: "₹" },
+  THB: { name: "Thai Baht", symbol: "฿" },
+  JPY: { name: "Japanese Yen", symbol: "¥" },
+  AUD: { name: "Australian Dollar", symbol: "A$" },
+  CAD: { name: "Canadian Dollar", symbol: "C$" },
+  SGD: { name: "Singapore Dollar", symbol: "S$" },
+  AED: { name: "UAE Dirham", symbol: "د.إ" },
+};
+
+const SYMBOLS = Object.fromEntries(
+  Object.entries(CURRENCY_META).map(([code, metadata]) => [code, metadata.symbol])
+);
 
 export function money(n, cur) {
   const v = Math.round((n + Number.EPSILON) * 100) / 100;

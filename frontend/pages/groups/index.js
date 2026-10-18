@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { api, getSession, clearSession, money, CURRENCIES } from "../../lib/api";
 import { signOut } from "next-auth/react";
+import CurrencySelect from "../../components/CurrencySelect";
+import { showToast } from "../../lib/toast";
 
 export default function Groups() {
   const router = useRouter();
@@ -10,7 +12,8 @@ export default function Groups() {
   const [balances, setBalances] = useState({});
   const [sheet, setSheet] = useState(null);
   const [newName, setNewName] = useState("");
-  const [newCurrency, setNewCurrency] = useState("USD");
+  const [newCurrency, setNewCurrency] = useState("INR");
+  const [newSpendingCurrency, setNewSpendingCurrency] = useState("INR");
   const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState({});
   const [busy, setBusy] = useState(false);
@@ -23,6 +26,7 @@ export default function Groups() {
   }, []);
 
   async function loadGroups(userId) {
+    try {
     const list = await api.userGroups(userId);
     setGroups(list);
     const balMap = {};
@@ -33,6 +37,7 @@ export default function Groups() {
       } catch { balMap[g.id] = 0; }
     }
     setBalances(balMap);
+    } catch (e) { setGroups([]); showToast(e.message || "Could not load groups", "error"); }
   }
 
   async function createGroup() {
@@ -40,11 +45,12 @@ export default function Groups() {
     if (!newName.trim()) { setError({ group: "Enter a group name" }); return; }
     setBusy(true);
     try {
-      const g = await api.createGroup(newName, newCurrency, user.id);
+      const g = await api.createGroup(newName, newCurrency, user.id, newSpendingCurrency);
       setSheet(null); setNewName("");
+      showToast("Group created successfully!");
       router.push(`/groups/${g.id}`);
     } catch (e) {
-      setError({ group: e.message });
+      setError({ group: e.message }); showToast(e.message || "Could not create group", "error");
     } finally { setBusy(false); }
   }
 
@@ -57,7 +63,7 @@ export default function Groups() {
       setSheet(null); setJoinCode("");
       router.push(`/groups/${g.id}`);
     } catch (e) {
-      setError({ join: e.message });
+      setError({ join: e.message }); showToast(e.message || "Could not join group", "error");
     } finally { setBusy(false); }
   }
 
@@ -73,7 +79,7 @@ export default function Groups() {
         <button className="btn-ghost" onClick={logout}>Log out</button>
       </div>
       <div className="screen">
-        {groups === null && <p className="muted small">Loading…</p>}
+        {groups === null && <div className="groups-loading" aria-label="Loading groups">{[0, 1, 2].map((item) => <div className="card skeleton-group-card" key={item}><div className="skeleton skeleton-line skeleton-group-title" /><div className="skeleton skeleton-line skeleton-group-meta" /><div className="skeleton skeleton-line skeleton-group-badge" /></div>)}</div>}
         {groups && groups.length === 0 && (
           <div className="empty">No groups yet.<br />Create one or join with a group code.</div>
         )}
@@ -108,12 +114,8 @@ export default function Groups() {
               <label>Group name</label>
               <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Flatmates" />
             </div>
-            <div className="field">
-              <label>Base currency</label>
-              <select value={newCurrency} onChange={e => setNewCurrency(e.target.value)}>
-                {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
+            <div className="field"><CurrencySelect label="Base currency · group totals" value={newCurrency} onChange={setNewCurrency} /></div>
+            <div className="field"><CurrencySelect label="Spending currency · default expenses" value={newSpendingCurrency} onChange={setNewSpendingCurrency} /></div>
             {error.group && <div className="error">{error.group}</div>}
             <button className="btn-primary" onClick={createGroup} disabled={busy}>Create group</button>
             <div style={{ textAlign: "center", margin: "18px 0 10px", color: "var(--text-3)", fontSize: 12.5 }}>or</div>

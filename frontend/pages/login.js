@@ -30,7 +30,8 @@ export default function Login() {
     }
     if (googleSession.appUserId) {
       setSession({ id: googleSession.appUserId, name: googleSession.appUserName });
-      router.push("/groups");
+      const next = typeof router.query.next === "string" && router.query.next.startsWith("/") ? router.query.next : "/groups";
+      router.push(next);
     }
   }, [status, googleSession]);
 
@@ -46,10 +47,7 @@ export default function Login() {
         <button
           onClick={() => { setError(""); signIn("google"); }}
           disabled={status === "loading"}
-          style={{
-            width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
-            gap: 10, padding: "14px", background: "#fff", border: "1.5px solid var(--border)", fontSize: 15.5
-          }}
+          className="google-signin-button"
         >
           <GoogleIcon />
           {status === "loading" ? "Please wait…" : "Continue with Google"}
