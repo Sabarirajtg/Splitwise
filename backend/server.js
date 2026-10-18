@@ -10,6 +10,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Health check - used by the uptime pinger to keep Render awake
+app.get("/health", (req, res) => {
+  res.status(200).json({ ok: true });
+});
+
 const CURRENCIES = ["USD", "EUR", "GBP", "INR", "THB", "JPY", "AUD", "CAD", "SGD", "AED"];
 
 // ---------- Auth ----------
