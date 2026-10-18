@@ -54,7 +54,22 @@ export function clearSession() {
 
 export const CURRENCIES = ["USD", "EUR", "GBP", "INR", "THB", "JPY", "AUD", "CAD", "SGD", "AED"];
 
-const SYMBOLS = { USD: "$", EUR: "€", GBP: "£", INR: "₹", THB: "฿", JPY: "¥", AUD: "A$", CAD: "C$", SGD: "S$", AED: "د.إ" };
+export const CURRENCY_META = {
+  USD: { name: "US Dollar", symbol: "$" },
+  EUR: { name: "Euro", symbol: "€" },
+  GBP: { name: "British Pound", symbol: "£" },
+  INR: { name: "Indian Rupee", symbol: "₹" },
+  THB: { name: "Thai Baht", symbol: "฿" },
+  JPY: { name: "Japanese Yen", symbol: "¥" },
+  AUD: { name: "Australian Dollar", symbol: "A$" },
+  CAD: { name: "Canadian Dollar", symbol: "C$" },
+  SGD: { name: "Singapore Dollar", symbol: "S$" },
+  AED: { name: "UAE Dirham", symbol: "د.إ" },
+};
+
+const SYMBOLS = Object.fromEntries(
+  Object.entries(CURRENCY_META).map(([code, metadata]) => [code, metadata.symbol])
+);
 
 export function money(n, cur) {
   const v = Math.round((n + Number.EPSILON) * 100) / 100;
