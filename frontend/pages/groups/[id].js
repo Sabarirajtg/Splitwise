@@ -97,7 +97,7 @@ export default function GroupDetail() {
 
         {tab === "balances" && balData && (
           <BalancesTab
-            group={group} balData={balData} user={user} memberName={memberName}
+            group={group} expenses={expenses} balData={balData} user={user} memberName={memberName}
             onSettle={async (from, to, amount) => {
               await api.recordSettlement(id, { from, to, amount, currency: group.baseCurrency });
               await loadAll();
@@ -141,7 +141,7 @@ function GroupSettings({group,user,settings,setSettings,saving,onSave,onSimplifi
  return <div className="card"><h3 style={{fontSize:15,marginBottom:12}}>Group settings</h3><CurrencySelect label="Base currency · group totals and balances" value={settings.baseCurrency} onChange={v=>setSettings(p=>({...p,baseCurrency:v}))} disabled={saving}/><div style={{height:12}}/><CurrencySelect label="Spending currency · default for new expenses" value={settings.spendingCurrency} onChange={v=>setSettings(p=>({...p,spendingCurrency:v}))} disabled={saving}/><p className="small muted" style={{marginTop:10}}>Changing the base currency recalculates consolidated values. Each expense keeps its original transaction currency and saved exchange-rate snapshot.</p>{dirty&&<button className="btn-primary" disabled={saving} onClick={onSave} style={{marginTop:10}}>{saving?"Saving…":"Save Changes"}</button>}{onCancel&&<button className="linkbtn" onClick={onCancel} style={{display:"block",margin:"14px auto 0"}}>Cancel</button>}<div className="divider" style={{margin:"20px 0",borderTop:"1px solid var(--border)"}}/><h3 style={{fontSize:14.5,marginBottom:8}}>Debt simplification</h3><p className="small muted">Opting out keeps your obligations visible and prioritizes direct settlement routes. It never removes your debt or credit from the group ledger.</p><label className="setting-toggle"><input type="checkbox" checked={!optedOut} onChange={e=>onSimplification(e.target.checked)} style={{width:"auto"}}/> Participate in suggested simplification</label></div>;
 }
 
-function BalancesTab({ group, balData, user, memberName, onSettle }) {
+function BalancesTab({ group, expenses, balData, user, memberName, onSettle }) {
   const { balances, simplified, baseCurrency } = balData;
   return (
     <>
@@ -162,6 +162,7 @@ function BalancesTab({ group, balData, user, memberName, onSettle }) {
             </div>
           ))}
       </div>
+      <div className="card"><h3 style={{fontSize:14.5,marginBottom:12}}>Expense currency breakdown</h3><p className="small muted">Original transaction values stay separate; converted equivalents use the group base currency.</p>{expenses.map(e=><div className="split-row" key={e.id}><div style={{flex:1,fontSize:13}}><span aria-hidden="true" style={{marginRight:8}}>{expenseIcon(e.desc)}</span><b>{e.desc}</b><div className="small muted">{e.date}</div></div><div style={{textAlign:"right"}}><b>{money(e.amount,e.currency)}</b><div className="small muted">≈ {money(e.amountInBase ?? e.amount,group.baseCurrency)}</div></div></div>)}{balData.expenseBreakdown&&<div className="currency-breakdown">{Object.entries(balData.expenseBreakdown.currencyTotals||{}).map(([cur,amt])=><span className="pill pill-neutral" key={cur}>{money(amt,cur)}</span>)}</div>}<p className="small muted" style={{marginTop:10}}>Consolidated expense total: {money(balData.expenseBreakdown?.groupTotal||0,group.baseCurrency)}</p></div>
       <div className="card">
         <h3 style={{ fontSize: 14.5, marginBottom: 12 }}>Individual balances</h3>
         {group.members.map(m => {
@@ -208,22 +209,13 @@ function ActivityTab({ expenses, settlements, memberName }) {
   );
 }
 
-function InviteSheet({ group, onClose }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="sheet">
-        <div className="sheet-handle" />
-        <h3 style={{ marginBottom: 12 }}>Invite to {group.name}</h3>
-        <p className="muted small" style={{ marginBottom: 10 }}>Share this group code. They can join from "Join group" after logging in.</p>
-        <div className="card" style={{ textAlign: "center", fontFamily: "monospace", fontSize: 15, wordBreak: "break-all" }}>{group.id}</div>
-        <button style={{ width: "100%", marginTop: 12 }} onClick={() => { navigator.clipboard?.writeText(group.id); setCopied(true); }}>
-          {copied ? "Copied!" : "Copy code"}
-        </button>
-        <button className="linkbtn" onClick={onClose} style={{ display: "block", margin: "18px auto 0" }}>Close</button>
-      </div>
-    </div>
-  );
+function InviteSheet({ group, user, invite, setInvite, onClose }) {
+ const [copied,setCopied]=useState(false),[busy,setBusy]=useState(false),[expiresAt,setExpiresAt]=useState(""),[revoked,setRevoked]=useState(false);
+ const currentToken = revoked ? null : (invite?.token || group.inviteToken);
+ async function ensureInvite(){const result=await api.createInvite(group.id,{userId:user.id,expiresAt:expiresAt?new Date(expiresAt).toISOString():undefined});setInvite(result);setRevoked(false);return result.token;}
+ async function copyLink(){setBusy(true);try{const token=currentToken||await ensureInvite();const link=`${window.location.origin}/invite/${token}`;await navigator.clipboard.writeText(link);setCopied(true);showToast("Invite link copied successfully!");}catch(e){showToast(e.message||"Could not copy invite link","error");}finally{setBusy(false);}}
+ async function shareLink(){setBusy(true);try{const token=currentToken||await ensureInvite();const url=`${window.location.origin}/invite/${token}`;if(navigator.share)await navigator.share({title:`Join ${group.name}`,text:`Join my SplitShare group: ${group.name}`,url});else{await navigator.clipboard.writeText(url);setCopied(true);showToast("Invite link copied successfully!");}}catch(e){if(e.name!=="AbortError")showToast(e.message||"Could not share invite link","error");}finally{setBusy(false);}}
+ return <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="sheet"><div className="sheet-handle"/><h3 style={{marginBottom:12}}>Invite friends to {group.name}</h3><p className="muted small">Anyone with this link can request to join. The group’s expenses and balances are not exposed by the invitation preview.</p><div className="field"><label>Optional expiration</label><input type="datetime-local" value={expiresAt} onChange={e=>setExpiresAt(e.target.value)}/></div>{currentToken?<div className="card" style={{fontSize:13,wordBreak:"break-all"}}>{typeof window!=="undefined"?window.location.origin+"/invite/"+currentToken:"Invitation link"}</div>:<p className="muted small">Generate a unique link to invite friends.</p>}<button className="btn-primary" style={{marginTop:10}} disabled={busy} onClick={copyLink}>{busy?"Preparing…":copied?"Copy invite link again":"Copy invite link"}</button><button style={{width:"100%",marginTop:8}} disabled={busy} onClick={shareLink}>Share link…</button><button style={{width:"100%",marginTop:8}} disabled={busy} onClick={async()=>{setBusy(true);try{const token=await ensureInvite();setCopied(false);showToast("Invitation link regenerated");}catch(e){showToast(e.message||"Could not regenerate link","error");}finally{setBusy(false);}}}>Regenerate link</button><button className="btn-danger-text" style={{width:"100%",marginTop:8}} disabled={busy||!currentToken} onClick={async()=>{setBusy(true);try{await api.revokeInvite(group.id,{userId:user.id});setInvite(null);setRevoked(true);setCopied(false);showToast("Invitation revoked");}catch(e){showToast(e.message||"Could not revoke link","error");}finally{setBusy(false);}}}>Revoke link</button><button className="linkbtn" onClick={onClose} style={{display:"block",margin:"18px auto 0"}}>Close</button></div></div>;
 }
 
 function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
@@ -305,17 +297,18 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
     setBusy(true);
     try {
       const payload = { desc: desc.trim(), amount: Math.round(amt * 100) / 100, currency, paidBy, date, recurring: recurring || null, splitMethod, splits };
-      if (editing) await api.updateExpense(editing.id, payload);
-      else await api.addExpense(group.id, payload);
+      if (editing) { await api.updateExpense(editing.id, payload); showToast("Expense updated successfully!"); }
+      else { await api.addExpense(group.id, payload); showToast("Expense added successfully!"); }
       onSaved();
     } catch (e) {
-      setError(e.message);
+      setError(e.message); showToast(e.message || "Could not save expense", "error");
     } finally { setBusy(false); }
   }
 
   async function del() {
     setBusy(true);
-    try { await api.deleteExpense(editing.id); onDeleted(); }
+    try { await api.deleteExpense(editing.id); showToast("Expense deleted successfully!"); onDeleted(); }
+    catch(e) { showToast(e.message || "Could not delete expense", "error"); }
     finally { setBusy(false); }
   }
 

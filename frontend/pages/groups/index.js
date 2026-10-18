@@ -26,6 +26,7 @@ export default function Groups() {
   }, []);
 
   async function loadGroups(userId) {
+    try {
     const list = await api.userGroups(userId);
     setGroups(list);
     const balMap = {};
@@ -36,6 +37,7 @@ export default function Groups() {
       } catch { balMap[g.id] = 0; }
     }
     setBalances(balMap);
+    } catch (e) { setGroups([]); showToast(e.message || "Could not load groups", "error"); }
   }
 
   async function createGroup() {
@@ -45,6 +47,7 @@ export default function Groups() {
     try {
       const g = await api.createGroup(newName, newCurrency, user.id, newSpendingCurrency);
       setSheet(null); setNewName("");
+      showToast("Group created successfully!");
       router.push(`/groups/${g.id}`);
     } catch (e) {
       setError({ group: e.message }); showToast(e.message || "Could not create group", "error");
