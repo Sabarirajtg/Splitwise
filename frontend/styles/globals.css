@@ -826,3 +826,43 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
   .skeleton::after { animation: none !important; }
   .page-enter { animation: none !important; }
 }
+
+
+/* Invite sheet secondary actions follow the active theme */
+.invite-secondary-button {
+  background: var(--card) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: none;
+  font-weight: 650;
+}
+.invite-secondary-button:hover:not(:disabled) {
+  background: var(--purple-light) !important;
+  border-color: var(--accent) !important;
+  color: var(--purple-dark) !important;
+}
+.invite-secondary-button:disabled {
+  background: var(--card) !important;
+  color: var(--text-2) !important;
+  opacity: .75;
+}
+:root[data-theme="light"] .invite-secondary-button {
+  background: #FFFFFF !important;
+  color: #332545 !important;
+  border-color: #DCCFEF !important;
+}
+:root[data-theme="light"] .invite-secondary-button:hover:not(:disabled) {
+  background: #F1EAFE !important;
+  color: #5B21B6 !important;
+  border-color: #8B5CF6 !important;
+}
+:root:not([data-theme="light"]) .invite-secondary-button {
+  background: #25232B !important;
+  color: #F5F2FA !important;
+  border-color: #45404F !important;
+}
+:root:not([data-theme="light"]) .invite-secondary-button:hover:not(:disabled) {
+  background: #342B43 !important;
+  color: #FFFFFF !important;
+  border-color: #A78BFA !important;
+}

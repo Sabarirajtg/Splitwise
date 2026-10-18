@@ -780,6 +780,7 @@ function InviteSheet({ group, user, invite, setInvite, onClose }) {
               : "Copy invite link"}
         </button>
         <button
+          className="invite-secondary-button"
           style={{ width: "100%", marginTop: 8 }}
           disabled={busy}
           onClick={shareLink}
@@ -787,6 +788,7 @@ function InviteSheet({ group, user, invite, setInvite, onClose }) {
           Share link…
         </button>
         <button
+          className="invite-secondary-button"
           style={{ width: "100%", marginTop: 8 }}
           disabled={busy}
           onClick={regenerateLink}
