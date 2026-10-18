@@ -25,13 +25,10 @@ async function getRates(base) {
   return rates;
 }
 
-// Convert amount from `from` currency into `to` currency
-async function convert(amount, from, to) {
-  if (from === to) return amount;
-  const rates = await getRates(from);
-  const rate = rates[to];
-  if (!rate) throw new Error(`No FX rate available for ${from} -> ${to}`);
-  return Math.round(amount * rate * 100) / 100;
+async function convertWithSnapshot(amount, from, to) {
+ const rates = await getRates(from), rate = from === to ? 1 : rates[to];
+ if (!rate) throw new Error(`No FX rate available for ${from} -> ${to}`);
+ return { amountInBase: Math.round(amount * rate * 100) / 100, rate, rates: { ...rates, [from]: 1 } };
 }
-
-module.exports = { getRates, convert };
+async function convert(amount, from, to) { if (from === to) return amount; return (await convertWithSnapshot(amount, from, to)).amountInBase; }
+module.exports = { getRates, convert, convertWithSnapshot };

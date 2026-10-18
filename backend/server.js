@@ -4,7 +4,8 @@ const cors = require("cors");
 const { nanoid } = require("nanoid");
 const connectDB = require("./db");
 const { User, Group, Expense, Settlement } = require("./models");
-const { convert, getRates } = require("./fx");
+const { convert, getRates, convertWithSnapshot } = require("./fx");
+const { simplifyDebts, expenseSummary } = require("./calculations");
 
 const app = express();
 app.use(cors());
@@ -81,15 +82,14 @@ app.get("/api/users/:userId/groups", async (req, res) => {
 });
 
 app.post("/api/groups", async (req, res) => {
-  const { name, baseCurrency, userId } = req.body;
-  if (!name || !name.trim()) return res.status(400).json({ error: "Enter a group name" });
-  if (!CURRENCIES.includes(baseCurrency)) return res.status(400).json({ error: "Invalid currency" });
-  const group = await Group.create({
-    _id: nanoid(10), name: name.trim(), baseCurrency, memberIds: [userId], createdBy: userId
-  });
-  res.json({ id: group._id, name: group.name, baseCurrency: group.baseCurrency, memberIds: group.memberIds });
+ const { name, baseCurrency, spendingCurrency, userId } = req.body;
+ if (!name || !name.trim()) return res.status(400).json({error:"Enter a group name"});
+ if (!userId) return res.status(400).json({error:"Missing user"});
+ const spend = spendingCurrency || baseCurrency;
+ if (!CURRENCIES.includes(baseCurrency) || !CURRENCIES.includes(spend)) return res.status(400).json({error:"Select valid currencies"});
+ const group = await Group.create({_id:nanoid(10),name:name.trim(),baseCurrency,spendingCurrency:spend,memberIds:[userId],createdBy:userId,simplificationOptOutIds:[],inviteToken:nanoid(24)});
+ res.json({id:group._id,name:group.name,baseCurrency:group.baseCurrency,spendingCurrency:group.spendingCurrency,memberIds:group.memberIds});
 });
-
 app.post("/api/groups/:id/join", async (req, res) => {
   const { userId } = req.body;
   const group = await Group.findById(req.params.id);
@@ -98,7 +98,7 @@ app.post("/api/groups/:id/join", async (req, res) => {
     group.memberIds.push(userId);
     await group.save();
   }
-  res.json({ id: group._id, name: group.name, baseCurrency: group.baseCurrency, memberIds: group.memberIds });
+  res.json({ id: group._id, name: group.name, baseCurrency: group.baseCurrency, spendingCurrency: group.spendingCurrency || group.baseCurrency, memberIds: group.memberIds });
 });
 
 app.get("/api/groups/:id", async (req, res) => {
@@ -106,10 +106,27 @@ app.get("/api/groups/:id", async (req, res) => {
   if (!group) return res.status(404).json({ error: "Not found" });
   const members = await User.find({ _id: { $in: group.memberIds } });
   res.json({
-    id: group._id, name: group.name, baseCurrency: group.baseCurrency, memberIds: group.memberIds,
+    id: group._id, name: group.name, baseCurrency: group.baseCurrency, spendingCurrency: group.spendingCurrency || group.baseCurrency,
+    currencyConfigured: Boolean(group.spendingCurrency), memberIds: group.memberIds, simplificationOptOutIds: group.simplificationOptOutIds || [], inviteToken: group.inviteToken || null,
     members: members.map(m => ({ id: m._id, name: m.name }))
   });
 });
+
+
+app.put("/api/groups/:id/settings", async (req,res)=>{
+ try { const {userId,baseCurrency,spendingCurrency}=req.body,group=await Group.findById(req.params.id);
+ if(!group)return res.status(404).json({error:"Group not found"});
+ if(!userId||!group.memberIds.includes(userId))return res.status(403).json({error:"Only group members can update settings"});
+ if(!CURRENCIES.includes(baseCurrency)||!CURRENCIES.includes(spendingCurrency))return res.status(400).json({error:"Select valid currencies"});
+ if(baseCurrency!==group.baseCurrency){const expenses=await Expense.find({groupId:group._id});for(const e of expenses){let rates=e.fxRates;if(!rates||!rates[baseCurrency])rates=await getRates(e.currency);const rate=e.currency===baseCurrency?1:rates[baseCurrency];if(!rate)return res.status(422).json({error:`No conversion rate for ${e.currency} to ${baseCurrency}`});e.amountInBase=Math.round(e.amount*rate*100)/100;e.fxRate=rate;e.fxRates={...rates,[e.currency]:1};await e.save();}}
+ group.baseCurrency=baseCurrency;group.spendingCurrency=spendingCurrency;await group.save();res.json({id:group._id,baseCurrency,spendingCurrency,currencyConfigured:true});
+ } catch(e){res.status(500).json({error:e.message||"Could not save settings"});}
+});
+app.put("/api/groups/:id/simplification",async(req,res)=>{const {userId,enabled}=req.body,group=await Group.findById(req.params.id);if(!group)return res.status(404).json({error:"Group not found"});if(!userId||!group.memberIds.includes(userId))return res.status(403).json({error:"Only group members can change this preference"});if(typeof enabled!=="boolean")return res.status(400).json({error:"enabled must be boolean"});const ids=new Set(group.simplificationOptOutIds||[]);enabled?ids.delete(userId):ids.add(userId);group.simplificationOptOutIds=[...ids];await group.save();res.json({simplificationOptOutIds:group.simplificationOptOutIds});});
+app.post("/api/groups/:id/invite",async(req,res)=>{const {userId,expiresAt}=req.body,group=await Group.findById(req.params.id);if(!group)return res.status(404).json({error:"Group not found"});if(!userId||!group.memberIds.includes(userId))return res.status(403).json({error:"Only members can manage invitations"});if(expiresAt&&(!Number.isFinite(Date.parse(expiresAt))||Date.parse(expiresAt)<=Date.now()))return res.status(400).json({error:"Expiration must be in the future"});if(!group.inviteToken)group.inviteToken=nanoid(24);group.inviteExpiresAt=expiresAt?new Date(expiresAt):null;await group.save();res.json({token:group.inviteToken,expiresAt:group.inviteExpiresAt,groupId:group._id,groupName:group.name});});
+app.delete("/api/groups/:id/invite",async(req,res)=>{const {userId}=req.body||{},group=await Group.findById(req.params.id);if(!group)return res.status(404).json({error:"Group not found"});if(!userId||!group.memberIds.includes(userId))return res.status(403).json({error:"Only members can manage invitations"});group.inviteToken=null;group.inviteExpiresAt=null;await group.save();res.json({ok:true});});
+app.get("/api/invitations/:token",async(req,res)=>{const g=await Group.findOne({inviteToken:req.params.token});if(!g||(g.inviteExpiresAt&&g.inviteExpiresAt<=new Date()))return res.status(404).json({error:"Invitation is invalid or expired"});res.json({groupId:g._id,groupName:g.name,expiresAt:g.inviteExpiresAt});});
+app.post("/api/invitations/:token/join",async(req,res)=>{const {userId}=req.body;if(!userId)return res.status(401).json({error:"Sign in before joining"});const g=await Group.findOne({inviteToken:req.params.token});if(!g||(g.inviteExpiresAt&&g.inviteExpiresAt<=new Date()))return res.status(404).json({error:"Invitation is invalid or expired"});if(!g.memberIds.includes(userId)){g.memberIds.push(userId);await g.save();}res.json({id:g._id,name:g.name});});
 
 // ---------- Expenses ----------
 app.get("/api/groups/:id/expenses", async (req, res) => {
@@ -120,7 +137,7 @@ app.get("/api/groups/:id/expenses", async (req, res) => {
 function mapExpense(e) {
   return {
     id: e._id, groupId: e.groupId, desc: e.desc, amount: e.amount, currency: e.currency,
-    amountInBase: e.amountInBase, paidBy: e.paidBy, splits: e.splits, date: e.date,
+    amountInBase: e.amountInBase, fxRate: e.fxRate, paidBy: e.paidBy, splits: e.splits, date: e.date,
     recurring: e.recurring, splitMethod: e.splitMethod, lastGenerated: e.lastGenerated
   };
 }
@@ -154,8 +171,10 @@ app.put("/api/expenses/:id", async (req, res) => {
     if (!expense) return res.status(404).json({ error: "Not found" });
     const group = await Group.findById(expense.groupId);
     const { desc, amount, currency, paidBy, date, recurring, splitMethod, splits } = req.body;
-    const amountInBase = await convert(amount, currency, group.baseCurrency);
-    Object.assign(expense, { desc, amount, currency, amountInBase, paidBy, date, recurring: recurring || null, splitMethod, splits });
+    if (!CURRENCIES.includes(currency)||!group.memberIds.includes(paidBy)) return res.status(400).json({error:"Invalid currency or payer"});
+    if (!Array.isArray(splits)||!splits.length||splits.some(x=>!group.memberIds.includes(x.userId)||!Number.isFinite(Number(x.amount))||Number(x.amount)<0)) return res.status(400).json({error:"Invalid expense splits"});
+    const fx = await convertWithSnapshot(Number(amount),currency,group.baseCurrency);
+    Object.assign(expense,{desc,amount:Number(amount),currency,amountInBase:fx.amountInBase,fxRate:fx.rate,fxRates:fx.rates,paidBy,date,recurring:recurring||null,splitMethod,splits});
     await expense.save();
     res.json(mapExpense(expense));
   } catch (e) {
@@ -206,28 +225,6 @@ app.post("/api/groups/:id/settlements", async (req, res) => {
   res.json({ id: s._id, from: s.from, to: s.to, amount: s.amount, currency: s.currency, date: s.date });
 });
 
-function simplifyDebts(balances) {
-  const creditors = [], debtors = [];
-  Object.entries(balances).forEach(([id, amt]) => {
-    const a = Math.round(amt * 100) / 100;
-    if (a > 0.005) creditors.push({ id, amt: a });
-    else if (a < -0.005) debtors.push({ id, amt: -a });
-  });
-  creditors.sort((a, b) => b.amt - a.amt);
-  debtors.sort((a, b) => b.amt - a.amt);
-  const txns = [];
-  let i = 0, j = 0;
-  while (i < debtors.length && j < creditors.length) {
-    const d = debtors[i], c = creditors[j];
-    const amt = Math.min(d.amt, c.amt);
-    txns.push({ from: d.id, to: c.id, amount: Math.round(amt * 100) / 100 });
-    d.amt -= amt; c.amt -= amt;
-    if (d.amt < 0.005) i++;
-    if (c.amt < 0.005) j++;
-  }
-  return txns;
-}
-
 app.get("/api/groups/:id/balances", async (req, res) => {
   const group = await Group.findById(req.params.id);
   if (!group) return res.status(404).json({ error: "Not found" });
@@ -250,7 +247,8 @@ app.get("/api/groups/:id/balances", async (req, res) => {
     bal[s.to] = (bal[s.to] || 0) - s.amount;
   });
 
-  res.json({ balances: bal, simplified: simplifyDebts(bal), baseCurrency: group.baseCurrency });
+  const breakdown = expenseSummary(expenses.map(e=>({amount:e.amount,currency:e.currency,amountInBase:e.amountInBase,splits:e.splits})),group.memberIds,group.baseCurrency);
+ res.json({balances:bal,simplified:simplifyDebts(bal,group.simplificationOptOutIds||[]),baseCurrency:group.baseCurrency,expenseBreakdown:breakdown});
 });
 
 const PORT = process.env.PORT || 4000;

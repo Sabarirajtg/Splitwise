@@ -19,6 +19,12 @@ export const api = {
   createGroup: (name, baseCurrency, userId) => request("/groups", { method: "POST", body: JSON.stringify({ name, baseCurrency, userId }) }),
   joinGroup: (groupId, userId) => request(`/groups/${groupId}/join`, { method: "POST", body: JSON.stringify({ userId }) }),
   getGroup: (id) => request(`/groups/${id}`),
+  updateGroupSettings: (id,payload) => request(`/groups/${id}/settings`,{method:"PUT",body:JSON.stringify(payload)}),
+  updateSimplification: (id,payload) => request(`/groups/${id}/simplification`,{method:"PUT",body:JSON.stringify(payload)}),
+  createInvite: (id,payload) => request(`/groups/${id}/invite`,{method:"POST",body:JSON.stringify(payload)}),
+  revokeInvite: (id,payload) => request(`/groups/${id}/invite`,{method:"DELETE",body:JSON.stringify(payload)}),
+  getInvite: token => request(`/invitations/${token}`),
+  joinInvite: (token,userId) => request(`/invitations/${token}/join`,{method:"POST",body:JSON.stringify({userId})}),
 
   groupExpenses: (id) => request(`/groups/${id}/expenses`),
   addExpense: (groupId, payload) => request(`/groups/${groupId}/expenses`, { method: "POST", body: JSON.stringify(payload) }),
@@ -46,6 +52,7 @@ export function clearSession() {
 }
 
 export const CURRENCIES = ["USD", "EUR", "GBP", "INR", "THB", "JPY", "AUD", "CAD", "SGD", "AED"];
+export const CURRENCY_META = {USD:{name:"US Dollar",symbol:"$"},EUR:{name:"Euro",symbol:"€"},GBP:{name:"British Pound",symbol:"£"},INR:{name:"Indian Rupee",symbol:"₹"},THB:{name:"Thai Baht",symbol:"฿"},JPY:{name:"Japanese Yen",symbol:"¥"},AUD:{name:"Australian Dollar",symbol:"A$"},CAD:{name:"Canadian Dollar",symbol:"C$"},SGD:{name:"Singapore Dollar",symbol:"S$"},AED:{name:"UAE Dirham",symbol:"د.إ"}};
 
 const SYMBOLS = { USD: "$", EUR: "€", GBP: "£", INR: "₹", THB: "฿", JPY: "¥", AUD: "A$", CAD: "C$", SGD: "S$", AED: "د.إ" };
 
