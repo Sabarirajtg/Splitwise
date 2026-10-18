@@ -41,7 +41,56 @@ export default function GroupDetail() {
     } catch (e) { showToast(e.message || "Could not load group data", "error"); }
   }
 
-  if (!group) return <div className="container"><div className="screen"><div className="skeleton skeleton-card"/><div className="skeleton skeleton-card"/><div className="skeleton skeleton-card"/></div></div>;
+  async function saveSettings() {
+    setSavingSettings(true);
+
+    try {
+      await api.updateGroupSettings(id, {
+        userId: user.id,
+        ...settings,
+      });
+
+      const updatedGroup = await api.getGroup(id);
+      setGroup(updatedGroup);
+      setSettings({
+        baseCurrency: updatedGroup.baseCurrency,
+        spendingCurrency:
+          updatedGroup.spendingCurrency || updatedGroup.baseCurrency,
+      });
+      setSheet(null);
+      await loadAll();
+      showToast("Changes saved successfully!");
+    } catch (error) {
+      showToast(error.message || "Could not save settings", "error");
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
+  async function updateSimplification(enabled) {
+    try {
+      await api.updateSimplification(id, {
+        userId: user.id,
+        enabled,
+      });
+      await loadAll();
+      showToast("Simplification preference updated");
+    } catch (error) {
+      showToast(error.message || "Could not update preference", "error");
+    }
+  }
+
+  if (!group) {
+    return (
+      <div className="container">
+        <div className="screen">
+          <div className="skeleton skeleton-card" />
+          <div className="skeleton skeleton-card" />
+          <div className="skeleton skeleton-card" />
+        </div>
+      </div>
+    );
+  }
 
   const memberName = (uid) => (group.members.find(m => m.id === uid) || {}).name || "?";
 
@@ -105,7 +154,17 @@ export default function GroupDetail() {
           />
         )}
 
-        {tab === "settings" && settings && <GroupSettings group={group} user={user} settings={settings} setSettings={setSettings} saving={savingSettings} onSave={async () => { setSavingSettings(true); try { await api.updateGroupSettings(id, { userId: user.id, ...settings }); const g = await api.getGroup(id); setGroup(g); setSettings({ baseCurrency:g.baseCurrency, spendingCurrency:g.spendingCurrency || g.baseCurrency }); await loadAll(); showToast("Changes saved successfully!"); } catch(e) { showToast(e.message || "Could not save settings", "error"); } finally { setSavingSettings(false); } }} onSimplification={async enabled => { try { await api.updateSimplification(id,{userId:user.id,enabled}); await loadAll(); showToast("Simplification preference updated"); } catch(e) { showToast(e.message || "Could not update preference","error"); } }} />}
+        {tab === "settings" && settings && (
+          <GroupSettings
+            group={group}
+            user={user}
+            settings={settings}
+            setSettings={setSettings}
+            saving={savingSettings}
+            onSave={saveSettings}
+            onSimplification={updateSimplification}
+          />
+        )}
 
         {tab === "activity" && (
           <ActivityTab expenses={expenses} settlements={settlements} memberName={memberName} />
@@ -115,7 +174,29 @@ export default function GroupDetail() {
       <button className="fab" onClick={() => { setEditingExpense(null); setSheet("expense"); }}>+</button>
 
       {sheet === "invite" && <InviteSheet group={group} user={user} invite={invite} setInvite={setInvite} onClose={() => setSheet(null)} />}
-      {sheet === "settings" && settings && <div className="overlay"><div className="sheet"><div className="sheet-handle" /><h3 style={{marginBottom:14}}>Configure group currencies</h3><p className="muted small">Choose how group totals are consolidated and which currency is used by default for new expenses.</p><GroupSettings group={group} user={user} settings={settings} setSettings={setSettings} saving={savingSettings} onSave={async()=>{setSavingSettings(true);try{await api.updateGroupSettings(id,{userId:user.id,...settings});const g=await api.getGroup(id);setGroup(g);setSettings({baseCurrency:g.baseCurrency,spendingCurrency:g.spendingCurrency||g.baseCurrency});setSheet(null);await loadAll();showToast("Changes saved successfully!");}catch(e){showToast(e.message||"Could not save settings","error");}finally{setSavingSettings(false);}}} onSimplification={async enabled=>{try{await api.updateSimplification(id,{userId:user.id,enabled});await loadAll();showToast("Simplification preference updated");}catch(e){showToast(e.message||"Could not update preference","error");}}} onCancel={()=>setSheet(null)} /></div></div>}
+      {sheet === "settings" && settings && (
+        <div className="overlay">
+          <div className="sheet">
+            <div className="sheet-handle" />
+            <h3 style={{ marginBottom: 14 }}>
+              Configure group currencies
+            </h3>
+            <p className="muted small">
+              Choose the currency for group totals and new expenses.
+            </p>
+            <GroupSettings
+              group={group}
+              user={user}
+              settings={settings}
+              setSettings={setSettings}
+              saving={savingSettings}
+              onSave={saveSettings}
+              onSimplification={updateSimplification}
+              onCancel={() => setSheet(null)}
+            />
+          </div>
+        </div>
+      )}
       {sheet === "expense" && (
         <ExpenseSheet
           group={group} user={user} editing={editingExpense}
@@ -129,16 +210,193 @@ export default function GroupDetail() {
 }
 
 function ExpensesOverview({ group, expenses, user }) {
- const summary = summarizeExpenses(expenses, group.members, group.baseCurrency);
- const max = Math.max(1, ...Object.values(summary.totals));
- return <div><div className="grid-summary"><div className="card"><p className="small muted">Total group expenses</p><h2>{money(summary.total,group.baseCurrency)}</h2></div><div className="card"><p className="small muted">My share</p><h2>{money(summary.totals[user.id]||0,group.baseCurrency)}</h2></div></div><div className="card"><h3 style={{fontSize:14.5,marginBottom:12}}>Spending by member</h3>{expenses.length===0?<p className="muted small">No expenses yet. Add the first expense to see the spending breakdown.</p>:group.members.map(m=><div className="member-bar-row" key={m.id}><span>{m.name}</span><div className="member-bar-track"><div className="member-bar-fill" style={{width:`${Math.max(0,(summary.totals[m.id]||0)/max*100)}%`}} /></div><b>{money(summary.totals[m.id]||0,group.baseCurrency)}</b></div>)}</div><div className="card"><h3 style={{fontSize:14.5}}>Original-currency totals</h3><p className="small muted">These amounts remain in their transaction currencies and are not added together.</p><div className="currency-breakdown">{Object.entries(summary.byCurrency).map(([cur,amount])=><span className="pill pill-neutral" key={cur}>{money(amount,cur)}</span>)}</div></div></div>;
+  const summary = summarizeExpenses(
+    expenses,
+    group.members,
+    group.baseCurrency,
+  );
+  const maximumSpending = Math.max(1, ...Object.values(summary.totals));
+
+  return (
+    <div>
+      <div className="grid-summary">
+        <div className="card">
+          <p className="small muted">Total group expenses</p>
+          <h2>{money(summary.total, group.baseCurrency)}</h2>
+        </div>
+        <div className="card">
+          <p className="small muted">My share</p>
+          <h2>{money(summary.totals[user.id] || 0, group.baseCurrency)}</h2>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3 style={{ fontSize: 14.5, marginBottom: 12 }}>
+          Spending by member
+        </h3>
+        {expenses.length === 0 ? (
+          <p className="muted small">
+            No expenses yet. Add the first expense to see the breakdown.
+          </p>
+        ) : (
+          group.members.map((member) => {
+            const spent = summary.totals[member.id] || 0;
+            const width = Math.max(0, (spent / maximumSpending) * 100);
+
+            return (
+              <div className="member-bar-row" key={member.id}>
+                <span>{member.name}</span>
+                <div className="member-bar-track">
+                  <div
+                    className="member-bar-fill"
+                    style={{ width: `${width}%` }}
+                  />
+                </div>
+                <b>{money(spent, group.baseCurrency)}</b>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div className="card">
+        <h3 style={{ fontSize: 14.5 }}>Original-currency totals</h3>
+        <p className="small muted">
+          These amounts are not added together across currencies.
+        </p>
+        <div className="currency-breakdown">
+          {Object.entries(summary.byCurrency).map(([currency, amount]) => (
+            <span className="pill pill-neutral" key={currency}>
+              {money(amount, currency)}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function GroupSettings({group,user,settings,setSettings,saving,onSave,onSimplification,onCancel}) {
- const original={baseCurrency:group.baseCurrency,spendingCurrency:group.spendingCurrency||group.baseCurrency};
- const dirty=settings && (settings.baseCurrency!==original.baseCurrency || settings.spendingCurrency!==original.spendingCurrency);
- const optedOut=(group.simplificationOptOutIds||[]).includes(user.id);
- return <div className="card"><h3 style={{fontSize:15,marginBottom:12}}>Group settings</h3><CurrencySelect label="Base currency · group totals and balances" value={settings.baseCurrency} onChange={v=>setSettings(p=>({...p,baseCurrency:v}))} disabled={saving}/><div style={{height:12}}/><CurrencySelect label="Spending currency · default for new expenses" value={settings.spendingCurrency} onChange={v=>setSettings(p=>({...p,spendingCurrency:v}))} disabled={saving}/><p className="small muted" style={{marginTop:10}}>Changing the base currency recalculates consolidated values. Each expense keeps its original transaction currency and saved exchange-rate snapshot.</p>{dirty&&<button className="btn-primary" disabled={saving} onClick={onSave} style={{marginTop:10}}>{saving?"Saving…":"Save Changes"}</button>}{onCancel&&<button className="linkbtn" onClick={onCancel} style={{display:"block",margin:"14px auto 0"}}>Cancel</button>}<div className="divider" style={{margin:"20px 0",borderTop:"1px solid var(--border)"}}/><h3 style={{fontSize:14.5,marginBottom:8}}>Debt simplification</h3><p className="small muted">Opting out keeps your obligations visible and prioritizes direct settlement routes. It never removes your debt or credit from the group ledger.</p><label className="setting-toggle"><input type="checkbox" checked={!optedOut} onChange={e=>onSimplification(e.target.checked)} style={{width:"auto"}}/> Participate in suggested simplification</label><div style={{marginTop:12}}>{group.members.map(member=>{const opted=(group.simplificationOptOutIds||[]).includes(member.id);return <div className="split-row" key={member.id}><div className="avatar" style={{background:avatarColor(member.id)}}>{initials(member.name)}</div><div style={{flex:1,fontSize:13.5}}>{member.name}</div><span className={`pill ${opted?"pill-neutral":"pill-teal"}`}>{opted?"Opted out":"Participating"}</span></div>})}</div></div>;
+function GroupSettings({
+  group,
+  user,
+  settings,
+  setSettings,
+  saving,
+  onSave,
+  onSimplification,
+  onCancel,
+}) {
+  const originalSettings = {
+    baseCurrency: group.baseCurrency,
+    spendingCurrency: group.spendingCurrency || group.baseCurrency,
+  };
+
+  const hasChanges =
+    settings.baseCurrency !== originalSettings.baseCurrency ||
+    settings.spendingCurrency !== originalSettings.spendingCurrency;
+  const optedOut = (group.simplificationOptOutIds || []).includes(user.id);
+
+  return (
+    <div className="card">
+      <h3 style={{ fontSize: 15, marginBottom: 12 }}>Group settings</h3>
+      <CurrencySelect
+        label="Base currency · group totals and balances"
+        value={settings.baseCurrency}
+        onChange={(value) =>
+          setSettings((previous) => ({ ...previous, baseCurrency: value }))
+        }
+        disabled={saving}
+      />
+      <div style={{ height: 12 }} />
+      <CurrencySelect
+        label="Spending currency · default for new expenses"
+        value={settings.spendingCurrency}
+        onChange={(value) =>
+          setSettings((previous) => ({
+            ...previous,
+            spendingCurrency: value,
+          }))
+        }
+        disabled={saving}
+      />
+
+      <p className="small muted" style={{ marginTop: 10 }}>
+        Changing the base currency recalculates consolidated values.
+        Each expense keeps its original currency and exchange-rate snapshot.
+      </p>
+
+      {hasChanges && (
+        <button
+          className="btn-primary"
+          disabled={saving}
+          onClick={onSave}
+          style={{ marginTop: 10 }}
+        >
+          {saving ? "Saving…" : "Save Changes"}
+        </button>
+      )}
+
+      {onCancel && (
+        <button
+          className="linkbtn"
+          onClick={onCancel}
+          style={{ display: "block", margin: "14px auto 0" }}
+        >
+          Cancel
+        </button>
+      )}
+
+      <div
+        className="divider"
+        style={{ margin: "20px 0", borderTop: "1px solid var(--border)" }}
+      />
+      <h3 style={{ fontSize: 14.5, marginBottom: 8 }}>
+        Debt simplification
+      </h3>
+      <p className="small muted">
+        Opting out keeps your obligations visible. It never removes
+        your debt or credit from the group ledger.
+      </p>
+      <label className="setting-toggle">
+        <input
+          type="checkbox"
+          checked={!optedOut}
+          onChange={(event) => onSimplification(event.target.checked)}
+          style={{ width: "auto" }}
+        />
+        Participate in suggested simplification
+      </label>
+
+      <div style={{ marginTop: 12 }}>
+        {group.members.map((member) => {
+          const memberOptedOut = (
+            group.simplificationOptOutIds || []
+          ).includes(member.id);
+
+          return (
+            <div className="split-row" key={member.id}>
+              <div
+                className="avatar"
+                style={{ background: avatarColor(member.id) }}
+              >
+                {initials(member.name)}
+              </div>
+              <div style={{ flex: 1, fontSize: 13.5 }}>
+                {member.name}
+              </div>
+              <span
+                className={`pill ${
+                  memberOptedOut ? "pill-neutral" : "pill-teal"
+                }`}
+              >
+                {memberOptedOut ? "Opted out" : "Participating"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function BalancesTab({ group, expenses, balData, user, memberName, onSettle }) {
@@ -162,7 +420,53 @@ function BalancesTab({ group, expenses, balData, user, memberName, onSettle }) {
             </div>
           ))}
       </div>
-      <div className="card"><h3 style={{fontSize:14.5,marginBottom:12}}>Expense currency breakdown</h3><p className="small muted">Original transaction values stay separate; converted equivalents use the group base currency.</p>{expenses.map(e=><div className="split-row" key={e.id}><div style={{flex:1,fontSize:13}}><span aria-hidden="true" style={{marginRight:8}}>{expenseIcon(e.desc)}</span><b>{e.desc}</b><div className="small muted">{e.date}</div></div><div style={{textAlign:"right"}}><b>{money(e.amount,e.currency)}</b><div className="small muted">≈ {money(e.amountInBase ?? e.amount,group.baseCurrency)}</div></div></div>)}{balData.expenseBreakdown&&<div className="currency-breakdown">{Object.entries(balData.expenseBreakdown.currencyTotals||{}).map(([cur,amt])=><span className="pill pill-neutral" key={cur}>{money(amt,cur)}</span>)}</div>}<p className="small muted" style={{marginTop:10}}>Consolidated expense total: {money(balData.expenseBreakdown?.groupTotal||0,group.baseCurrency)}</p></div>
+      <div className="card">
+        <h3 style={{ fontSize: 14.5, marginBottom: 12 }}>
+          Expense currency breakdown
+        </h3>
+        <p className="small muted">
+          Original transaction values stay separate; converted equivalents
+          use the group base currency.
+        </p>
+        {expenses.map((expense) => (
+          <div className="split-row" key={expense.id}>
+            <div style={{ flex: 1, fontSize: 13 }}>
+              <span aria-hidden="true" style={{ marginRight: 8 }}>
+                {expenseIcon(expense.desc)}
+              </span>
+              <b>{expense.desc}</b>
+              <div className="small muted">{expense.date}</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <b>{money(expense.amount, expense.currency)}</b>
+              <div className="small muted">
+                ≈ {money(
+                  expense.amountInBase ?? expense.amount,
+                  group.baseCurrency,
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+        {balData.expenseBreakdown && (
+          <div className="currency-breakdown">
+            {Object.entries(
+              balData.expenseBreakdown.currencyTotals || {},
+            ).map(([currency, amount]) => (
+              <span className="pill pill-neutral" key={currency}>
+                {money(amount, currency)}
+              </span>
+            ))}
+          </div>
+        )}
+        <p className="small muted" style={{ marginTop: 10 }}>
+          Consolidated expense total:{" "}
+          {money(
+            balData.expenseBreakdown?.groupTotal || 0,
+            group.baseCurrency,
+          )}
+        </p>
+      </div>
       <div className="card">
         <h3 style={{ fontSize: 14.5, marginBottom: 12 }}>Individual balances</h3>
         {group.members.map(m => {
