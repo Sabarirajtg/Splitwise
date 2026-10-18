@@ -1,1 +1,13 @@
-import {proxyAuthenticated} from "../../../../lib/serverApi";export default function handler(req,res){if(req.method!=="POST")return res.status(405).json({error:"Method not allowed"});return proxyAuthenticated(req,res,`/invitations/${req.query.token}/join`);}
+import { proxyAuthenticated } from "../../../../lib/serverApi";
+
+export default function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  return proxyAuthenticated(
+    req,
+    res,
+    `/invitations/${req.query.token}/join`,
+  );
+}

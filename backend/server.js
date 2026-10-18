@@ -82,14 +82,45 @@ app.get("/api/users/:userId/groups", async (req, res) => {
 });
 
 app.post("/api/groups", async (req, res) => {
- const { name, baseCurrency, spendingCurrency, userId } = req.body;
- if (!name || !name.trim()) return res.status(400).json({error:"Enter a group name"});
- if (!userId) return res.status(400).json({error:"Missing user"});
- const spend = spendingCurrency || baseCurrency;
- if (!CURRENCIES.includes(baseCurrency) || !CURRENCIES.includes(spend)) return res.status(400).json({error:"Select valid currencies"});
- const group = await Group.create({_id:nanoid(10),name:name.trim(),baseCurrency,spendingCurrency:spend,memberIds:[userId],createdBy:userId,simplificationOptOutIds:[],inviteToken:nanoid(24)});
- res.json({id:group._id,name:group.name,baseCurrency:group.baseCurrency,spendingCurrency:group.spendingCurrency,memberIds:group.memberIds});
+  const { name, baseCurrency, spendingCurrency, userId } = req.body;
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: "Enter a group name" });
+  }
+
+  if (!userId) {
+    return res.status(400).json({ error: "Missing user" });
+  }
+
+  const selectedSpendingCurrency = spendingCurrency || baseCurrency;
+
+  if (
+    !CURRENCIES.includes(baseCurrency) ||
+    !CURRENCIES.includes(selectedSpendingCurrency)
+  ) {
+    return res.status(400).json({ error: "Select valid currencies" });
+  }
+
+  const group = await Group.create({
+    _id: nanoid(10),
+    name: name.trim(),
+    baseCurrency,
+    spendingCurrency: selectedSpendingCurrency,
+    memberIds: [userId],
+    createdBy: userId,
+    simplificationOptOutIds: [],
+    inviteToken: nanoid(24),
+  });
+
+  res.json({
+    id: group._id,
+    name: group.name,
+    baseCurrency: group.baseCurrency,
+    spendingCurrency: group.spendingCurrency,
+    memberIds: group.memberIds,
+  });
 });
+
 app.post("/api/groups/:id/join", async (req, res) => {
   const { userId } = req.body;
   const group = await Group.findById(req.params.id);
@@ -113,40 +144,270 @@ app.get("/api/groups/:id", async (req, res) => {
 });
 
 
-function requireInternal(req,res){const secret=req.headers["x-internal-secret"];if(!secret||secret!==process.env.INTERNAL_API_SECRET){res.status(401).json({error:"Unauthorized"});return false;}return true;}
-app.put("/api/groups/:id/settings", async (req,res)=>{
- if (!requireInternal(req,res)) return;
- try { const {userId,baseCurrency,spendingCurrency}=req.body,group=await Group.findById(req.params.id);
- if(!group)return res.status(404).json({error:"Group not found"});
- if(!userId||!group.memberIds.includes(userId))return res.status(403).json({error:"Only group members can update settings"});
- if(!CURRENCIES.includes(baseCurrency)||!CURRENCIES.includes(spendingCurrency))return res.status(400).json({error:"Select valid currencies"});
- if(baseCurrency!==group.baseCurrency){
-  const expenses=await Expense.find({groupId:group._id});
-  const converted=[];
-  for(const e of expenses){
-   let rates=e.fxRates;
-   if(!rates||!rates[baseCurrency]) rates=await getRates(e.currency);
-   const rate=e.currency===baseCurrency?1:rates[baseCurrency];
-   if(!rate)return res.status(422).json({error:`No conversion rate for ${e.currency} to ${baseCurrency}`});
-   converted.push({expense:e,rate,rates,amountInBase:Math.round(e.amount*rate*100)/100});
+function requireInternal(req, res) {
+  const secret = req.headers["x-internal-secret"];
+
+  if (!secret || secret !== process.env.INTERNAL_API_SECRET) {
+    res.status(401).json({ error: "Unauthorized" });
+    return false;
   }
-  const settlements=await Settlement.find({groupId:group._id});
-  const convertedSettlements=[];
-  for(const item of settlements){
-   const amount=item.currency===baseCurrency?item.amount:await convert(item.amount,item.currency,baseCurrency);
-   convertedSettlements.push({item,amount});
+
+  return true;
+}
+
+function isGroupMember(group, userId) {
+  return Boolean(userId && group.memberIds.includes(userId));
+}
+
+function isValidInvitation(group) {
+  return Boolean(
+    group && (!group.inviteExpiresAt || group.inviteExpiresAt > new Date()),
+  );
+}
+
+async function recalculateGroupCurrency(group, baseCurrency) {
+  const expenses = await Expense.find({ groupId: group._id });
+  const convertedExpenses = [];
+
+  // Calculate all new values before saving any records.
+  for (const expense of expenses) {
+    let rates = expense.fxRates;
+
+    if (!rates || !rates[baseCurrency]) {
+      rates = await getRates(expense.currency);
+    }
+
+    const rate =
+      expense.currency === baseCurrency ? 1 : rates[baseCurrency];
+
+    if (!rate) {
+      throw new Error(
+        `No conversion rate for ${expense.currency} to ${baseCurrency}`,
+      );
+    }
+
+    convertedExpenses.push({
+      expense,
+      rate,
+      rates,
+      amountInBase: Math.round(expense.amount * rate * 100) / 100,
+    });
   }
-  for(const item of converted){item.expense.amountInBase=item.amountInBase;item.expense.fxRate=item.rate;item.expense.fxRates={...item.rates,[item.expense.currency]:1};await item.expense.save();}
-  for(const entry of convertedSettlements){entry.item.amount=entry.amount;entry.item.currency=baseCurrency;await entry.item.save();}
- }
- group.baseCurrency=baseCurrency;group.spendingCurrency=spendingCurrency;await group.save();res.json({id:group._id,baseCurrency,spendingCurrency,currencyConfigured:true});
- } catch(e){res.status(500).json({error:e.message||"Could not save settings"});}
+
+  const settlements = await Settlement.find({ groupId: group._id });
+  const convertedSettlements = [];
+
+  for (const settlement of settlements) {
+    const amount =
+      settlement.currency === baseCurrency
+        ? settlement.amount
+        : await convert(
+            settlement.amount,
+            settlement.currency,
+            baseCurrency,
+          );
+
+    convertedSettlements.push({ settlement, amount });
+  }
+
+  for (const { expense, rate, rates, amountInBase } of convertedExpenses) {
+    expense.amountInBase = amountInBase;
+    expense.fxRate = rate;
+    expense.fxRates = { ...rates, [expense.currency]: 1 };
+    await expense.save();
+  }
+
+  for (const { settlement, amount } of convertedSettlements) {
+    settlement.amount = amount;
+    settlement.currency = baseCurrency;
+    await settlement.save();
+  }
+}
+
+app.put("/api/groups/:id/settings", async (req, res) => {
+  if (!requireInternal(req, res)) return;
+
+  try {
+    const { userId, baseCurrency, spendingCurrency } = req.body;
+    const group = await Group.findById(req.params.id);
+
+    if (!group) {
+      return res.status(404).json({ error: "Group not found" });
+    }
+
+    if (!isGroupMember(group, userId)) {
+      return res.status(403).json({
+        error: "Only group members can update settings",
+      });
+    }
+
+    if (
+      !CURRENCIES.includes(baseCurrency) ||
+      !CURRENCIES.includes(spendingCurrency)
+    ) {
+      return res.status(400).json({ error: "Select valid currencies" });
+    }
+
+    if (baseCurrency !== group.baseCurrency) {
+      await recalculateGroupCurrency(group, baseCurrency);
+    }
+
+    group.baseCurrency = baseCurrency;
+    group.spendingCurrency = spendingCurrency;
+    await group.save();
+
+    res.json({
+      id: group._id,
+      baseCurrency,
+      spendingCurrency,
+      currencyConfigured: true,
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message || "Could not save settings",
+    });
+  }
 });
-app.put("/api/groups/:id/simplification",async(req,res)=>{if(!requireInternal(req,res))return;const {userId,enabled}=req.body,group=await Group.findById(req.params.id);if(!group)return res.status(404).json({error:"Group not found"});if(!userId||!group.memberIds.includes(userId))return res.status(403).json({error:"Only group members can change this preference"});if(typeof enabled!=="boolean")return res.status(400).json({error:"enabled must be boolean"});const ids=new Set(group.simplificationOptOutIds||[]);enabled?ids.delete(userId):ids.add(userId);group.simplificationOptOutIds=[...ids];await group.save();res.json({simplificationOptOutIds:group.simplificationOptOutIds});});
-app.post("/api/groups/:id/invite",async(req,res)=>{if(!requireInternal(req,res))return;const {userId,expiresAt}=req.body,group=await Group.findById(req.params.id);if(!group)return res.status(404).json({error:"Group not found"});if(!userId||!group.memberIds.includes(userId))return res.status(403).json({error:"Only members can manage invitations"});if(expiresAt&&(!Number.isFinite(Date.parse(expiresAt))||Date.parse(expiresAt)<=Date.now()))return res.status(400).json({error:"Expiration must be in the future"});if(!group.inviteToken)group.inviteToken=nanoid(24);group.inviteExpiresAt=expiresAt?new Date(expiresAt):null;await group.save();res.json({token:group.inviteToken,expiresAt:group.inviteExpiresAt,groupId:group._id,groupName:group.name});});
-app.delete("/api/groups/:id/invite",async(req,res)=>{if(!requireInternal(req,res))return;const {userId}=req.body||{},group=await Group.findById(req.params.id);if(!group)return res.status(404).json({error:"Group not found"});if(!userId||!group.memberIds.includes(userId))return res.status(403).json({error:"Only members can manage invitations"});group.inviteToken=null;group.inviteExpiresAt=null;await group.save();res.json({ok:true});});
-app.get("/api/invitations/:token",async(req,res)=>{const g=await Group.findOne({inviteToken:req.params.token});if(!g||(g.inviteExpiresAt&&g.inviteExpiresAt<=new Date()))return res.status(404).json({error:"Invitation is invalid or expired"});res.json({groupName:g.name,expiresAt:g.inviteExpiresAt});});
-app.post("/api/invitations/:token/join",async(req,res)=>{if(!requireInternal(req,res))return;const {userId}=req.body;if(!userId)return res.status(401).json({error:"Sign in before joining"});const g=await Group.findOne({inviteToken:req.params.token});if(!g||(g.inviteExpiresAt&&g.inviteExpiresAt<=new Date()))return res.status(404).json({error:"Invitation is invalid or expired"});if(!g.memberIds.includes(userId)){g.memberIds.push(userId);await g.save();}res.json({id:g._id,name:g.name});});
+
+app.put("/api/groups/:id/simplification", async (req, res) => {
+  if (!requireInternal(req, res)) return;
+
+  const { userId, enabled } = req.body;
+  const group = await Group.findById(req.params.id);
+
+  if (!group) {
+    return res.status(404).json({ error: "Group not found" });
+  }
+
+  if (!isGroupMember(group, userId)) {
+    return res.status(403).json({
+      error: "Only group members can change this preference",
+    });
+  }
+
+  if (typeof enabled !== "boolean") {
+    return res.status(400).json({ error: "enabled must be boolean" });
+  }
+
+  const optedOutIds = new Set(group.simplificationOptOutIds || []);
+
+  if (enabled) {
+    optedOutIds.delete(userId);
+  } else {
+    optedOutIds.add(userId);
+  }
+
+  group.simplificationOptOutIds = [...optedOutIds];
+  await group.save();
+
+  res.json({
+    simplificationOptOutIds: group.simplificationOptOutIds,
+  });
+});
+
+app.post("/api/groups/:id/invite", async (req, res) => {
+  if (!requireInternal(req, res)) return;
+
+  const { userId, expiresAt } = req.body;
+  const group = await Group.findById(req.params.id);
+
+  if (!group) {
+    return res.status(404).json({ error: "Group not found" });
+  }
+
+  if (!isGroupMember(group, userId)) {
+    return res.status(403).json({
+      error: "Only members can manage invitations",
+    });
+  }
+
+  if (
+    expiresAt &&
+    (!Number.isFinite(Date.parse(expiresAt)) ||
+      Date.parse(expiresAt) <= Date.now())
+  ) {
+    return res.status(400).json({
+      error: "Expiration must be in the future",
+    });
+  }
+
+  if (!group.inviteToken) {
+    group.inviteToken = nanoid(24);
+  }
+
+  group.inviteExpiresAt = expiresAt ? new Date(expiresAt) : null;
+  await group.save();
+
+  res.json({
+    token: group.inviteToken,
+    expiresAt: group.inviteExpiresAt,
+    groupId: group._id,
+    groupName: group.name,
+  });
+});
+
+app.delete("/api/groups/:id/invite", async (req, res) => {
+  if (!requireInternal(req, res)) return;
+
+  const { userId } = req.body || {};
+  const group = await Group.findById(req.params.id);
+
+  if (!group) {
+    return res.status(404).json({ error: "Group not found" });
+  }
+
+  if (!isGroupMember(group, userId)) {
+    return res.status(403).json({
+      error: "Only members can manage invitations",
+    });
+  }
+
+  group.inviteToken = null;
+  group.inviteExpiresAt = null;
+  await group.save();
+
+  res.json({ ok: true });
+});
+
+app.get("/api/invitations/:token", async (req, res) => {
+  const group = await Group.findOne({ inviteToken: req.params.token });
+
+  if (!isValidInvitation(group)) {
+    return res.status(404).json({
+      error: "Invitation is invalid or expired",
+    });
+  }
+
+  res.json({
+    groupName: group.name,
+    expiresAt: group.inviteExpiresAt,
+  });
+});
+
+app.post("/api/invitations/:token/join", async (req, res) => {
+  if (!requireInternal(req, res)) return;
+
+  const { userId } = req.body;
+
+  if (!userId) {
+    return res.status(401).json({ error: "Sign in before joining" });
+  }
+
+  const group = await Group.findOne({ inviteToken: req.params.token });
+
+  if (!isValidInvitation(group)) {
+    return res.status(404).json({
+      error: "Invitation is invalid or expired",
+    });
+  }
+
+  if (!group.memberIds.includes(userId)) {
+    group.memberIds.push(userId);
+    await group.save();
+  }
+
+  res.json({ id: group._id, name: group.name });
+});
 
 // ---------- Expenses ----------
 app.get("/api/groups/:id/expenses", async (req, res) => {

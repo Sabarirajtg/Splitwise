@@ -1,34 +1,74 @@
 const fetch = require("node-fetch");
 
-// Free, no-key FX API. Cached in memory for 1 hour per base currency.
-const cache = new Map(); // base -> {rates, fetchedAt}
-const TTL_MS = 60 * 60 * 1000;
+// Rates are cached for one hour per source currency.
+const cache = new Map();
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
-async function getRates(base) {
-  const cached = cache.get(base);
-  if (cached && Date.now() - cached.fetchedAt < TTL_MS) {
+async function getRates(baseCurrency) {
+  const cached = cache.get(baseCurrency);
+  const cacheIsFresh =
+    cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS;
+
+  if (cacheIsFresh) {
     return cached.rates;
   }
-  // open.er-api.com is free, keyless, and covers a broad currency set (incl. THB, INR)
-  const res = await fetch(`https://open.er-api.com/v6/latest/${base}`);
-  if (!res.ok) {
-    if (cached) return cached.rates; // fall back to stale cache if API hiccups
+
+  const response = await fetch(
+    `https://open.er-api.com/v6/latest/${baseCurrency}`,
+  );
+
+  if (!response.ok) {
+    if (cached) return cached.rates;
     throw new Error("Failed to fetch FX rates");
   }
-  const data = await res.json();
+
+  const data = await response.json();
+
   if (data.result !== "success") {
     if (cached) return cached.rates;
     throw new Error("FX provider returned an error");
   }
-  const rates = { ...data.rates, [base]: 1 };
-  cache.set(base, { rates, fetchedAt: Date.now() });
+
+  const rates = { ...data.rates, [baseCurrency]: 1 };
+  cache.set(baseCurrency, { rates, fetchedAt: Date.now() });
+
   return rates;
 }
 
-async function convertWithSnapshot(amount, from, to) {
- const rates = await getRates(from), rate = from === to ? 1 : rates[to];
- if (!rate) throw new Error(`No FX rate available for ${from} -> ${to}`);
- return { amountInBase: Math.round(amount * rate * 100) / 100, rate, rates: { ...rates, [from]: 1 } };
+async function convertWithSnapshot(amount, fromCurrency, toCurrency) {
+  const rates = await getRates(fromCurrency);
+  const rate =
+    fromCurrency === toCurrency ? 1 : rates[toCurrency];
+
+  if (!rate) {
+    throw new Error(
+      `No FX rate available for ${fromCurrency} -> ${toCurrency}`,
+    );
+  }
+
+  return {
+    amountInBase: Math.round(amount * rate * 100) / 100,
+    rate,
+    rates: { ...rates, [fromCurrency]: 1 },
+  };
 }
-async function convert(amount, from, to) { if (from === to) return amount; return (await convertWithSnapshot(amount, from, to)).amountInBase; }
-module.exports = { getRates, convert, convertWithSnapshot };
+
+async function convert(amount, fromCurrency, toCurrency) {
+  if (fromCurrency === toCurrency) {
+    return amount;
+  }
+
+  const result = await convertWithSnapshot(
+    amount,
+    fromCurrency,
+    toCurrency,
+  );
+
+  return result.amountInBase;
+}
+
+module.exports = {
+  getRates,
+  convert,
+  convertWithSnapshot,
+};

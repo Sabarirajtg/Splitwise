@@ -1,1 +1,64 @@
-import {useMemo,useState} from "react";import {CURRENCIES,CURRENCY_META} from "../lib/api";export default function CurrencySelect({value,onChange,label,disabled=false}){const [q,setQ]=useState("");const choices=useMemo(()=>CURRENCIES.filter(c=>`${c} ${CURRENCY_META[c]?.name||c} ${CURRENCY_META[c]?.symbol||c}`.toLowerCase().includes(q.toLowerCase())),[q]);return <div className="currency-select">{label&&<label>{label}</label>}<input aria-label={label||"Search currencies"} value={q} onChange={e=>setQ(e.target.value)} placeholder="Search currency by name or code…" disabled={disabled}/><select aria-label={label||"Currency"} value={value} onChange={e=>onChange(e.target.value)} disabled={disabled}>{choices.map(c=><option key={c} value={c}>{CURRENCY_META[c]?.name||c} ({c}) · {CURRENCY_META[c]?.symbol||c}</option>)}{!choices.includes(value)&&<option value={value}>{CURRENCY_META[value]?.name||value} ({value})</option>}</select></div>}
+import { useMemo, useState } from "react";
+import { CURRENCIES, CURRENCY_META } from "../lib/api";
+
+export default function CurrencySelect({
+  value,
+  onChange,
+  label,
+  disabled = false,
+}) {
+  const [search, setSearch] = useState("");
+
+  const filteredCurrencies = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return CURRENCIES.filter((currency) => {
+      const metadata = CURRENCY_META[currency] || {};
+      const searchableText = [
+        currency,
+        metadata.name || currency,
+        metadata.symbol || currency,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchableText.includes(query);
+    });
+  }, [search]);
+
+  return (
+    <div className="currency-select">
+      {label && <label>{label}</label>}
+
+      <input
+        aria-label={label || "Search currencies"}
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Search by currency name, code, or symbol…"
+        disabled={disabled}
+      />
+
+      <select
+        aria-label={label || "Currency"}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
+      >
+        {filteredCurrencies.map((currency) => {
+          const metadata = CURRENCY_META[currency] || {};
+
+          return (
+            <option key={currency} value={currency}>
+              {metadata.name || currency} ({currency}) ·{" "}
+              {metadata.symbol || currency}
+            </option>
+          );
+        })}
+
+        {!filteredCurrencies.includes(value) && (
+          <option value={value}>{value}</option>
+        )}
+      </select>
+    </div>
+  );
+}
