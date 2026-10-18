@@ -718,3 +718,28 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
   outline-offset: 3px;
 }
 .google-signin-button svg { flex: 0 0 20px; }
+
+
+/* Theme-aware skeleton loading states */
+.skeleton {
+  background: linear-gradient(90deg, #18181C 25%, #29292F 37%, #18181C 63%) !important;
+  background-size: 400% 100% !important;
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 10px;
+}
+.skeleton-card {
+  background-color: var(--card);
+  border-color: var(--border);
+}
+:root[data-theme="light"] .skeleton {
+  background: linear-gradient(90deg, #EEE8F7 25%, #FAF8FD 37%, #EEE8F7 63%) !important;
+  background-size: 400% 100% !important;
+  border-color: #E8E1F2;
+}
+:root[data-theme="light"] .skeleton-card {
+  background-color: #FFFFFF;
+  border-color: #E8E1F2;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none !important; }
+}
