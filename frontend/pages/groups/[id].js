@@ -32,13 +32,13 @@ export default function GroupDetail() {
   }, [user, id]);
 
   async function loadAll() {
-    await api.processRecurring(id);
-    const [g, exps, setl, bal] = await Promise.all([
-      api.getGroup(id), api.groupExpenses(id), api.groupSettlements(id), api.balances(id)
-    ]);
-    setGroup(g); setExpenses(exps); setSettlements(setl); setBalData(bal);
-    setSettings({ baseCurrency: g.baseCurrency, spendingCurrency: g.spendingCurrency || g.baseCurrency });
-    if (!g.currencyConfigured) setSheet("settings");
+    try { await api.processRecurring(id); } catch (e) { showToast(e.message || "Could not process recurring expenses", "error"); }
+    try {
+      const [g, exps, setl, bal] = await Promise.all([api.getGroup(id), api.groupExpenses(id), api.groupSettlements(id), api.balances(id)]);
+      setGroup(g); setExpenses(exps); setSettlements(setl); setBalData(bal);
+      setSettings({ baseCurrency: g.baseCurrency, spendingCurrency: g.spendingCurrency || g.baseCurrency });
+      if (!g.currencyConfigured) setSheet("settings");
+    } catch (e) { showToast(e.message || "Could not load group data", "error"); }
   }
 
   if (!group) return <div className="container"><div className="screen"><div className="skeleton skeleton-card"/><div className="skeleton skeleton-card"/><div className="skeleton skeleton-card"/></div></div>;
@@ -194,7 +194,7 @@ function ActivityTab({ expenses, settlements, memberName }) {
     <div className="card">
       {items.map((it, i) => it.type === "expense" ? (
         <div className="split-row" key={i}>
-          <span style={{ width: 22 }}>🧾</span>
+          <span aria-hidden="true" style={{ width: 22 }}>{expenseIcon(it.e.desc)}</span>
           <div style={{ flex: 1, fontSize: 13.5 }}>{memberName(it.e.paidBy)} added <b>{it.e.desc}</b></div>
           <div className="small muted">{it.date}</div>
         </div>
@@ -213,8 +213,8 @@ function InviteSheet({ group, user, invite, setInvite, onClose }) {
  const [copied,setCopied]=useState(false),[busy,setBusy]=useState(false),[expiresAt,setExpiresAt]=useState(""),[revoked,setRevoked]=useState(false);
  const currentToken = revoked ? null : (invite?.token || group.inviteToken);
  async function ensureInvite(){const result=await api.createInvite(group.id,{userId:user.id,expiresAt:expiresAt?new Date(expiresAt).toISOString():undefined});setInvite(result);setRevoked(false);return result.token;}
- async function copyLink(){setBusy(true);try{const token=currentToken||await ensureInvite();const link=`${window.location.origin}/invite/${token}`;await navigator.clipboard.writeText(link);setCopied(true);showToast("Invite link copied successfully!");}catch(e){showToast(e.message||"Could not copy invite link","error");}finally{setBusy(false);}}
- async function shareLink(){setBusy(true);try{const token=currentToken||await ensureInvite();const url=`${window.location.origin}/invite/${token}`;if(navigator.share)await navigator.share({title:`Join ${group.name}`,text:`Join my SplitShare group: ${group.name}`,url});else{await navigator.clipboard.writeText(url);setCopied(true);showToast("Invite link copied successfully!");}}catch(e){if(e.name!=="AbortError")showToast(e.message||"Could not share invite link","error");}finally{setBusy(false);}}
+ async function copyLink(){setBusy(true);try{const token=(expiresAt?await ensureInvite():currentToken)||await ensureInvite();const link=`${window.location.origin}/invite/${token}`;await navigator.clipboard.writeText(link);setCopied(true);showToast("Invite link copied successfully!");}catch(e){showToast(e.message||"Could not copy invite link","error");}finally{setBusy(false);}}
+ async function shareLink(){setBusy(true);try{const token=(expiresAt?await ensureInvite():currentToken)||await ensureInvite();const url=`${window.location.origin}/invite/${token}`;if(navigator.share)await navigator.share({title:`Join ${group.name}`,text:`Join my SplitShare group: ${group.name}`,url});else{await navigator.clipboard.writeText(url);setCopied(true);showToast("Invite link copied successfully!");}}catch(e){if(e.name!=="AbortError")showToast(e.message||"Could not share invite link","error");}finally{setBusy(false);}}
  return <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="sheet"><div className="sheet-handle"/><h3 style={{marginBottom:12}}>Invite friends to {group.name}</h3><p className="muted small">Anyone with this link can request to join. The group’s expenses and balances are not exposed by the invitation preview.</p><div className="field"><label>Optional expiration</label><input type="datetime-local" value={expiresAt} onChange={e=>setExpiresAt(e.target.value)}/></div>{currentToken?<div className="card" style={{fontSize:13,wordBreak:"break-all"}}>{typeof window!=="undefined"?window.location.origin+"/invite/"+currentToken:"Invitation link"}</div>:<p className="muted small">Generate a unique link to invite friends.</p>}<button className="btn-primary" style={{marginTop:10}} disabled={busy} onClick={copyLink}>{busy?"Preparing…":copied?"Copy invite link again":"Copy invite link"}</button><button style={{width:"100%",marginTop:8}} disabled={busy} onClick={shareLink}>Share link…</button><button style={{width:"100%",marginTop:8}} disabled={busy} onClick={async()=>{setBusy(true);try{const token=await ensureInvite();setCopied(false);showToast("Invitation link regenerated");}catch(e){showToast(e.message||"Could not regenerate link","error");}finally{setBusy(false);}}}>Regenerate link</button><button className="btn-danger-text" style={{width:"100%",marginTop:8}} disabled={busy||!currentToken} onClick={async()=>{setBusy(true);try{await api.revokeInvite(group.id,{userId:user.id});setInvite(null);setRevoked(true);setCopied(false);showToast("Invitation revoked");}catch(e){showToast(e.message||"Could not revoke link","error");}finally{setBusy(false);}}}>Revoke link</button><button className="linkbtn" onClick={onClose} style={{display:"block",margin:"18px auto 0"}}>Close</button></div></div>;
 }
 

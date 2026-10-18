@@ -26,7 +26,8 @@ async function getRates(base) {
 }
 
 async function convertWithSnapshot(amount, from, to) {
- const rates = await getRates(from), rate = from === to ? 1 : rates[to];
+ if (from === to) return { amountInBase: amount, rate: 1, rates: { [from]: 1 } };
+ const rates = await getRates(from), rate = rates[to];
  if (!rate) throw new Error(`No FX rate available for ${from} -> ${to}`);
  return { amountInBase: Math.round(amount * rate * 100) / 100, rate, rates: { ...rates, [from]: 1 } };
 }
