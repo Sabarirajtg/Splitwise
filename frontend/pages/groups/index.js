@@ -114,12 +114,8 @@ export default function Groups() {
               <label>Group name</label>
               <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Flatmates" />
             </div>
-            <div className="field">
-              <label>Base currency</label>
-              <select value={newCurrency} onChange={e => setNewCurrency(e.target.value)}>
-                {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
+            <div className="field"><CurrencySelect label="Base currency · group totals" value={newCurrency} onChange={setNewCurrency} /></div>
+            <div className="field"><CurrencySelect label="Spending currency · default expenses" value={newSpendingCurrency} onChange={setNewSpendingCurrency} /></div>
             {error.group && <div className="error">{error.group}</div>}
             <button className="btn-primary" onClick={createGroup} disabled={busy}>Create group</button>
             <div style={{ textAlign: "center", margin: "18px 0 10px", color: "var(--text-3)", fontSize: 12.5 }}>or</div>
