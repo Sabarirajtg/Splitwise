@@ -79,7 +79,7 @@ export default function Groups() {
         <button className="btn-ghost" onClick={logout}>Log out</button>
       </div>
       <div className="screen">
-        {groups === null && <><div className="skeleton skeleton-card"/><div className="skeleton skeleton-card"/><div className="skeleton skeleton-card"/></>}
+        {groups === null && <div className="groups-loading" aria-label="Loading groups">{[0, 1, 2].map((item) => <div className="card skeleton-group-card" key={item}><div className="skeleton skeleton-line skeleton-group-title" /><div className="skeleton skeleton-line skeleton-group-meta" /><div className="skeleton skeleton-line skeleton-group-badge" /></div>)}</div>}
         {groups && groups.length === 0 && (
           <div className="empty">No groups yet.<br />Create one or join with a group code.</div>
         )}

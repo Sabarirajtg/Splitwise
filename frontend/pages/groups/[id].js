@@ -82,11 +82,50 @@ export default function GroupDetail() {
 
   if (!group) {
     return (
-      <div className="container">
+      <div className="container group-loading" aria-label="Loading group">
+        <div className="topbar skeleton-topbar">
+          <div className="skeleton skeleton-line skeleton-back" />
+          <div className="skeleton skeleton-line skeleton-title" />
+          <div className="skeleton skeleton-line skeleton-action" />
+        </div>
         <div className="screen">
-          <div className="skeleton skeleton-card" />
-          <div className="skeleton skeleton-card" />
-          <div className="skeleton skeleton-card" />
+          <div className="skeleton-tabs">
+            {Array.from({ length: 5 }, (_, index) => <div className="skeleton skeleton-tab" key={index} />)}
+          </div>
+          <div className="skeleton skeleton-section-title" />
+          <div className="skeleton skeleton-card skeleton-expense-card">
+            <div className="skeleton skeleton-avatar" />
+            <div className="skeleton-expense-copy">
+              <div className="skeleton skeleton-line skeleton-expense-title" />
+              <div className="skeleton skeleton-line skeleton-expense-meta" />
+            </div>
+            <div className="skeleton-expense-amount">
+              <div className="skeleton skeleton-line skeleton-amount" />
+              <div className="skeleton skeleton-line skeleton-badge" />
+            </div>
+          </div>
+          <div className="skeleton skeleton-card skeleton-expense-card">
+            <div className="skeleton skeleton-avatar" />
+            <div className="skeleton-expense-copy">
+              <div className="skeleton skeleton-line skeleton-expense-title" />
+              <div className="skeleton skeleton-line skeleton-expense-meta" />
+            </div>
+            <div className="skeleton-expense-amount">
+              <div className="skeleton skeleton-line skeleton-amount" />
+              <div className="skeleton skeleton-line skeleton-badge" />
+            </div>
+          </div>
+          <div className="skeleton skeleton-card skeleton-expense-card">
+            <div className="skeleton skeleton-avatar" />
+            <div className="skeleton-expense-copy">
+              <div className="skeleton skeleton-line skeleton-expense-title" />
+              <div className="skeleton skeleton-line skeleton-expense-meta" />
+            </div>
+            <div className="skeleton-expense-amount">
+              <div className="skeleton skeleton-line skeleton-amount" />
+              <div className="skeleton skeleton-line skeleton-badge" />
+            </div>
+          </div>
         </div>
       </div>
     );
