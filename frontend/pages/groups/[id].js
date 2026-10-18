@@ -210,68 +210,142 @@ export default function GroupDetail() {
 }
 
 function ExpensesOverview({ group, expenses, user }) {
-  const summary = summarizeExpenses(
-    expenses,
-    group.members,
-    group.baseCurrency,
-  );
-  const maximumSpending = Math.max(1, ...Object.values(summary.totals));
+  const summary = summarizeExpenses(expenses, group.members, group.baseCurrency);
+  const categoryTotals = {};
+  const memberTotals = {};
+  const dateTotals = {};
+
+  function expenseCategory(description) {
+    const text = (description || "").toLowerCase();
+    if (/food|lunch|dinner|breakfast|restaurant|cafe|coffee|snack|grocery|groceries|meal|pizza|drink/.test(text)) return "Food & drinks";
+    if (/taxi|uber|ola|fuel|petrol|diesel|transport|metro|train|bus|flight|parking|toll|auto/.test(text)) return "Transport";
+    if (/hotel|stay|room|airbnb|resort|hostel|accommodation/.test(text)) return "Stay";
+    if (/shopping|shop|clothes|gift|souvenir|market|purchase/.test(text)) return "Shopping";
+    if (/ticket|museum|tour|activity|game|movie|cinema|entry|boat|show/.test(text)) return "Activities";
+    if (/bill|rent|utility|electricity|water|internet|wifi/.test(text)) return "Bills";
+    return "Other";
+  }
+
+  expenses.forEach((expense) => {
+    const amount = Number(expense.amountInBase ?? expense.amount) || 0;
+    const category = expenseCategory(expense.desc);
+    categoryTotals[category] = (categoryTotals[category] || 0) + amount;
+    memberTotals[expense.paidBy] = (memberTotals[expense.paidBy] || 0) + amount;
+    const date = expense.date || "Unknown date";
+    dateTotals[date] = (dateTotals[date] || 0) + amount;
+  });
+
+  const categoryData = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]);
+  const memberData = group.members
+    .map((member) => ({ label: member.name, value: memberTotals[member.id] || 0, id: member.id }))
+    .sort((a, b) => b.value - a.value);
+  const dateData = Object.entries(dateTotals).sort((a, b) => a[0].localeCompare(b[0])).slice(-14);
+  const totalGroupExpense = expenses.reduce((total, expense) => total + (Number(expense.amountInBase ?? expense.amount) || 0), 0);
 
   return (
-    <div>
+    <div className="expense-overview">
       <div className="grid-summary">
-        <div className="card">
+        <div className="card overview-total-card">
           <p className="small muted">Total group expenses</p>
-          <h2>{money(summary.total, group.baseCurrency)}</h2>
+          <h2>{money(totalGroupExpense, group.baseCurrency)}</h2>
+          <p className="small muted">{expenses.length} expense{expenses.length === 1 ? "" : "s"} recorded</p>
         </div>
         <div className="card">
           <p className="small muted">My share</p>
           <h2>{money(summary.totals[user.id] || 0, group.baseCurrency)}</h2>
+          <p className="small muted">Based on your splits</p>
         </div>
       </div>
 
-      <div className="card">
-        <h3 style={{ fontSize: 14.5, marginBottom: 12 }}>
-          Spending by member
-        </h3>
-        {expenses.length === 0 ? (
-          <p className="muted small">
-            No expenses yet. Add the first expense to see the breakdown.
-          </p>
-        ) : (
-          group.members.map((member) => {
-            const spent = summary.totals[member.id] || 0;
-            const width = Math.max(0, (spent / maximumSpending) * 100);
-
-            return (
-              <div className="member-bar-row" key={member.id}>
-                <span>{member.name}</span>
-                <div className="member-bar-track">
-                  <div
-                    className="member-bar-fill"
-                    style={{ width: `${width}%` }}
-                  />
-                </div>
-                <b>{money(spent, group.baseCurrency)}</b>
-              </div>
-            );
-          })
+      <div className="card chart-card">
+        <div className="chart-heading">
+          <div>
+            <p className="chart-eyebrow">BREAKDOWN</p>
+            <h3>Expenses by type</h3>
+          </div>
+          <span className="chart-unit">{group.baseCurrency}</span>
+        </div>
+        <p className="small muted chart-description">Estimated from expense descriptions. Rename expenses clearly for more accurate grouping.</p>
+        {categoryData.length === 0 ? <p className="muted small">Add expenses to see categories here.</p> : (
+          <div className="bar-chart-list">
+            {categoryData.map(([label, value]) => (
+              <HorizontalBar key={label} label={label} value={value} max={Math.max(...categoryData.map((item) => item[1]), 1)} currency={group.baseCurrency} />
+            ))}
+          </div>
         )}
+      </div>
+
+      <div className="card chart-card">
+        <div className="chart-heading">
+          <div>
+            <p className="chart-eyebrow">PEOPLE</p>
+            <h3>Spend by member</h3>
+          </div>
+          <span className="chart-unit">{group.baseCurrency}</span>
+        </div>
+        <p className="small muted chart-description">Total expenses paid by each member, converted to the group currency.</p>
+        {memberData.length === 0 || expenses.length === 0 ? <p className="muted small">Add expenses to compare member spending.</p> : (
+          <div className="bar-chart-list">
+            {memberData.map((member) => (
+              <HorizontalBar key={member.id} label={member.label} value={member.value} max={Math.max(...memberData.map((item) => item.value), 1)} currency={group.baseCurrency} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="card chart-card">
+        <div className="chart-heading">
+          <div>
+            <p className="chart-eyebrow">TIMELINE</p>
+            <h3>Spending by date</h3>
+          </div>
+          <span className="chart-unit">LAST {Math.min(dateData.length, 14)} DATES</span>
+        </div>
+        <p className="small muted chart-description">Daily group expense totals. The tallest bar marks the highest-spending date.</p>
+        {dateData.length === 0 ? <p className="muted small">Add expenses to see spending trends over time.</p> : (
+          <div className="date-chart" role="img" aria-label="Bar chart showing group expenses by date">
+            {dateData.map(([date, value]) => {
+              const max = Math.max(...dateData.map((item) => item[1]), 1);
+              const height = Math.max(4, (value / max) * 100);
+              const isPeak = value === max;
+              return (
+                <div className="date-chart-column" key={date} title={`${date}: ${money(value, group.baseCurrency)}`}>
+                  <span className="date-chart-value">{value === max ? money(value, group.baseCurrency) : ""}</span>
+                  <div className={`date-chart-bar ${isPeak ? "peak" : ""}`} style={{ height: `${height}%` }} />
+                  <span className="date-chart-label">{date.slice(5)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {dateData.length > 0 && (() => {
+          const peak = dateData.reduce((best, item) => item[1] > best[1] ? item : best, dateData[0]);
+          return <p className="chart-peak-note">Highest spend: <strong>{peak[0]}</strong> · <strong>{money(peak[1], group.baseCurrency)}</strong></p>;
+        })()}
       </div>
 
       <div className="card">
         <h3 style={{ fontSize: 14.5 }}>Original-currency totals</h3>
-        <p className="small muted">
-          These amounts are not added together across currencies.
-        </p>
+        <p className="small muted">These amounts stay separate and are not added together across currencies.</p>
         <div className="currency-breakdown">
           {Object.entries(summary.byCurrency).map(([currency, amount]) => (
-            <span className="pill pill-neutral" key={currency}>
-              {money(amount, currency)}
-            </span>
+            <span className="pill pill-neutral" key={currency}>{money(amount, currency)}</span>
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function HorizontalBar({ label, value, max, currency }) {
+  const width = Math.max(0, (value / max) * 100);
+  return (
+    <div className="horizontal-chart-row">
+      <div className="horizontal-chart-label" title={label}>{label}</div>
+      <div className="horizontal-chart-track">
+        <div className="horizontal-chart-fill" style={{ width: `${width}%` }} />
+      </div>
+      <strong className="horizontal-chart-value">{money(value, currency)}</strong>
     </div>
   );
 }
