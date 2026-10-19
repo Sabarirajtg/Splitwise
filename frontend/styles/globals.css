@@ -951,6 +951,14 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   border-radius: 12px; background: var(--gradient); color: #fff; font-size: 20px; font-weight: 800;
 }
 .upi-setup-content { flex: 1; min-width: 0; }
+.upi-setup-content #splitshare-upi-id {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  padding: 14px 18px;
+  margin: 0 0 12px;
+}
 .upi-setup-content h3 { font-size: 15px; margin: 1px 0 6px; }
 .upi-setup-content p { line-height: 1.45; margin: 0 0 12px; }
 .upi-setup-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
