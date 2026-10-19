@@ -228,7 +228,7 @@ export default function GroupDetail() {
 
         {tab === "balances" && balData && (
           <BalancesTab
-            group={group} expenses={expenses} balData={balData} user={user} memberName={memberName}
+            group={group} expenses={expenses} settlements={settlements} balData={balData} user={user} memberName={memberName}
             onSettle={startSettlement}
           />
         )}
@@ -604,7 +604,7 @@ function GroupSettings({
   );
 }
 
-function BalancesTab({ group, expenses, balData, user, memberName, onSettle }) {
+function BalancesTab({ group, expenses, settlements, balData, user, memberName, onSettle }) {
   const { balances, simplified, baseCurrency } = balData;
   return (
     <>
@@ -619,9 +619,15 @@ function BalancesTab({ group, expenses, balData, user, memberName, onSettle }) {
                 <b>{memberName(t.from)}</b> owes <b>{memberName(t.to)}</b>
               </div>
               <div style={{ fontWeight: 700 }}>{money(t.amount, baseCurrency)}</div>
-              {(t.from === user.id || t.to === user.id) && (
-                <button className="btn-ghost" onClick={() => onSettle(t.from, t.to, t.amount)}>Settle</button>
-              )}
+              {(() => {
+                const pending = settlements.find((settlement) =>
+                  settlement.status !== "settled" && settlement.from === t.from && settlement.to === t.to
+                );
+                if (pending) return <span className="pill pill-amber">Awaiting confirmation</span>;
+                return t.from === user.id
+                  ? <button className="btn-ghost" onClick={() => onSettle(t.from, t.to, t.amount)}>Settle</button>
+                  : null;
+              })()}
             </div>
           ))}
       </div>
