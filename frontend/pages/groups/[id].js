@@ -20,6 +20,11 @@ export default function GroupDetail() {
   const [settings, setSettings] = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [invite, setInvite] = useState(null);
+  const [settleDraft, setSettleDraft] = useState(null);
+  const [upiEditorOpen, setUpiEditorOpen] = useState(false);
+  const [upiDraft, setUpiDraft] = useState("");
+  const [savingUpi, setSavingUpi] = useState(false);
+  const [upiPromptDismissed, setUpiPromptDismissed] = useState(false);
 
   useEffect(() => {
     const session = getSession();
@@ -29,6 +34,32 @@ export default function GroupDetail() {
 
   useEffect(() => {
     if (user && id) loadAll();
+  }, [user, id]);
+
+  // Keep pending payment updates visible if the recipient already has a group open.
+  useEffect(() => {
+    if (!user || !id) return undefined;
+    let active = true;
+    async function refreshSettlements() {
+      try {
+        const latest = await api.groupSettlements(id);
+        if (active) setSettlements(Array.isArray(latest) ? latest : []);
+      } catch {
+        // Leave the last rendered state in place during transient network errors.
+      }
+    }
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible") refreshSettlements();
+    }
+    window.addEventListener("focus", refreshSettlements);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    const intervalId = window.setInterval(refreshSettlements, 30000);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshSettlements);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.clearInterval(intervalId);
+    };
   }, [user, id]);
 
   async function loadAll() {
@@ -77,6 +108,66 @@ export default function GroupDetail() {
       showToast("Simplification preference updated");
     } catch (error) {
       showToast(error.message || "Could not update preference", "error");
+    }
+  }
+
+  function startSettlement(from, to, amount) {
+    setSettleDraft({ from, to, amount, currency: group.baseCurrency });
+    setSheet("settle");
+  }
+
+  async function markSettlementPaid() {
+    if (!settleDraft || !user) return;
+    try {
+      await api.recordSettlement(id, { ...settleDraft, userId: user.id });
+      setSheet(null);
+      setSettleDraft(null);
+      await loadAll();
+      showToast("Marked as paid. Waiting for the recipient to confirm.");
+    } catch (error) {
+      showToast(error.message || "Could not record payment", "error");
+    }
+  }
+
+  async function confirmSettlement(settlementId) {
+    try {
+      await api.confirmSettlement(id, settlementId, user.id);
+      await loadAll();
+      showToast("Payment confirmed and balance updated");
+    } catch (error) {
+      showToast(error.message || "Could not confirm payment", "error");
+    }
+  }
+
+  async function reportSettlementProblem(settlementId) {
+    try {
+      await api.reportSettlementProblem(id, settlementId, user.id, "Recipient has not received the payment");
+      await loadAll();
+      showToast("Issue reported to the payer");
+    } catch (error) {
+      showToast(error.message || "Could not report payment issue", "error");
+    }
+  }
+
+  async function saveUpiId() {
+    if (!user || !upiDraft.trim()) return;
+    setSavingUpi(true);
+    try {
+      const updated = await api.updateUpi(user.id, upiDraft.trim());
+      setGroup((previous) => previous ? {
+        ...previous,
+        members: previous.members.map((member) =>
+          member.id === user.id ? { ...member, upiId: updated.upiId || null } : member
+        ),
+      } : previous);
+      setUpiDraft(updated.upiId || "");
+      setUpiEditorOpen(false);
+      setUpiPromptDismissed(false);
+      showToast("UPI ID saved");
+    } catch (error) {
+      showToast(error.message || "Could not save UPI ID", "error");
+    } finally {
+      setSavingUpi(false);
     }
   }
 
@@ -131,6 +222,7 @@ export default function GroupDetail() {
   }
 
   const memberName = (uid) => (group.members.find(m => m.id === uid) || {}).name || "?";
+  const groupPendingSettlements = settlements.filter((settlement) => settlement.status !== "settled" && (settlement.from === user.id || settlement.to === user.id));
 
   return (
     <div className="container">
@@ -147,6 +239,59 @@ export default function GroupDetail() {
           <button className={`tab ${tab === "activity" ? "active" : ""}`} onClick={() => setTab("activity")}>Activity</button>
           <button className={`tab ${tab === "settings" ? "active" : ""}`} onClick={() => setTab("settings")}>Settings</button>
         </div>
+
+        {group.members.some((member) => member.id === user.id && !member.upiId) && upiPromptDismissed && (
+          <p className="upi-later-prompt small muted">
+            Want to receive payments through UPI?{" "}
+            <button
+              className="linkbtn"
+              onClick={() => {
+                setUpiDraft("");
+                setUpiPromptDismissed(false);
+                setUpiEditorOpen(true);
+              }}
+            >
+              Set up UPI
+            </button>
+          </p>
+        )}
+
+        {group.members.some((member) => member.id === user.id && !member.upiId) && !upiPromptDismissed && (
+          <section className="upi-setup-card" aria-label="UPI setup">
+            <div className="upi-setup-icon" aria-hidden="true">₹</div>
+            <div className="upi-setup-content">
+              <h3>{upiEditorOpen ? "Add your UPI ID" : "Want to receive payments through UPI?"}</h3>
+              <p className="small muted">Add your UPI ID so group members can pay you more easily when settling balances. You can skip this for now.</p>
+              {upiEditorOpen ? (
+                <>
+                  <label htmlFor="splitshare-upi-id">Your UPI ID</label>
+                  <input
+                    id="splitshare-upi-id"
+                    value={upiDraft}
+                    onChange={(event) => setUpiDraft(event.target.value)}
+                    placeholder="name@bank"
+                    autoComplete="off"
+                  />
+                  <div className="upi-setup-actions">
+                    <button className="btn-primary" onClick={saveUpiId} disabled={savingUpi || !upiDraft.trim()}>
+                      {savingUpi ? "Saving…" : "Save UPI ID"}
+                    </button>
+                    <button className="linkbtn" onClick={() => setUpiEditorOpen(false)} disabled={savingUpi}>Cancel</button>
+                  </div>
+                </>
+              ) : (
+                <div className="upi-setup-actions">
+                  <button className="btn-primary" onClick={() => { setUpiDraft(""); setUpiEditorOpen(true); }}>Set up UPI</button>
+                  <button className="linkbtn" onClick={() => setUpiPromptDismissed(true)}>Not now</button>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {groupPendingSettlements.length > 0 && (
+          <PendingSettlementPanel settlements={groupPendingSettlements} user={user} memberName={memberName} currency={group.baseCurrency} onConfirm={confirmSettlement} onReportProblem={reportSettlementProblem} />
+        )}
 
         {tab === "overview" && <ExpensesOverview group={group} expenses={expenses} user={user} />}
 
@@ -184,11 +329,8 @@ export default function GroupDetail() {
 
         {tab === "balances" && balData && (
           <BalancesTab
-            group={group} expenses={expenses} balData={balData} user={user} memberName={memberName}
-            onSettle={async (from, to, amount) => {
-              await api.recordSettlement(id, { from, to, amount, currency: group.baseCurrency });
-              await loadAll();
-            }}
+            group={group} expenses={expenses} settlements={settlements} balData={balData} user={user} memberName={memberName}
+            onSettle={startSettlement}
           />
         )}
 
@@ -211,6 +353,7 @@ export default function GroupDetail() {
 
       <button className="fab" onClick={() => { setEditingExpense(null); setSheet("expense"); }}>+</button>
 
+      {sheet === "settle" && settleDraft && <PaymentSheet group={group} draft={settleDraft} onMarkPaid={markSettlementPaid} onClose={() => { setSheet(null); setSettleDraft(null); }} />}
       {sheet === "invite" && <InviteSheet group={group} user={user} invite={invite} setInvite={setInvite} onClose={() => setSheet(null)} />}
       {sheet === "settings" && settings && (
         <div className="overlay">
@@ -247,6 +390,52 @@ export default function GroupDetail() {
   );
 }
 
+function PendingSettlementPanel({ settlements, user, memberName, currency, onConfirm, onReportProblem }) {
+  return (
+    <section className="pending-payments" aria-label="Payments needing attention">
+      <div className="pending-payments-heading"><span className="attention-count">{settlements.length}</span><div><h3>Payment updates</h3><p className="small muted">These payments are not settled yet.</p></div></div>
+      {settlements.map((settlement) => {
+        const isRecipient = settlement.to === user.id;
+        const isProblem = settlement.status === "reported_problem";
+        return (
+          <div className="pending-payment-item" key={settlement.id}>
+            <div className="pending-payment-copy">
+              <strong>{money(settlement.amount, currency)}</strong>
+              <p className="small">{isProblem ? (isRecipient ? "You reported a problem with this payment." : memberName(settlement.to) + " reported a problem with this payment.") : (isRecipient ? memberName(settlement.from) + " marked this as paid." : "Waiting for " + memberName(settlement.to) + " to confirm.")}</p>
+              {isProblem && settlement.issueNote && <p className="small muted">{settlement.issueNote}</p>}
+            </div>
+            {isRecipient && <div className="pending-payment-actions"><button className="btn-primary pending-confirm-button" onClick={() => onConfirm(settlement.id)}>Received</button>{!isProblem && <button className="pending-problem-button" onClick={() => onReportProblem(settlement.id)}>Not received</button>}</div>}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function PaymentSheet({ group, draft, onMarkPaid, onClose }) {
+  const recipient = group.members.find((member) => member.id === draft.to);
+  const canUseUpi = draft.currency === "INR" && Boolean(recipient && recipient.upiId);
+  function openUpi() {
+    if (!canUseUpi) return;
+    const params = new URLSearchParams({ pa: recipient.upiId, pn: recipient.name, am: Number(draft.amount).toFixed(2), cu: "INR", tn: "SplitShare settlement - " + group.name });
+    window.location.href = "upi://pay?" + params.toString();
+  }
+  return (
+    <div className="overlay" onClick={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="sheet payment-sheet">
+        <div className="sheet-handle" />
+        <p className="chart-eyebrow">SETTLEMENT</p>
+        <h2 style={{ marginBottom: 6 }}>Pay {recipient ? recipient.name : "group member"}</h2>
+        <p className="muted small">Once you have made the transfer, mark it as paid. The recipient can confirm when they are next in SplitShare.</p>
+        <div className="payment-amount-card"><span className="small muted">Amount to pay</span><strong>{money(draft.amount, draft.currency)}</strong>{canUseUpi && <span className="small muted">UPI ID · {recipient.upiId}</span>}</div>
+        {canUseUpi ? <button className="btn-primary" onClick={openUpi}>Pay with UPI</button> : <p className="payment-hint">{draft.currency !== "INR" ? "UPI links are available for INR settlements. You can still pay another way." : "This person has not added a UPI ID yet. You can still pay them another way."}</p>}
+        <button className="btn-primary payment-mark-button" onClick={onMarkPaid}>I’ve paid — request confirmation</button>
+        <p className="small muted payment-footnote">This does not mark the debt as settled. The balance updates only after the recipient confirms receipt.</p>
+        <button className="linkbtn" onClick={onClose} style={{ display: "block", margin: "14px auto 0" }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
 function ExpensesOverview({ group, expenses, user }) {
   const summary = summarizeExpenses(expenses, group.members, group.baseCurrency);
   const categoryTotals = {};
@@ -513,7 +702,7 @@ function GroupSettings({
   );
 }
 
-function BalancesTab({ group, expenses, balData, user, memberName, onSettle }) {
+function BalancesTab({ group, expenses, settlements, balData, user, memberName, onSettle }) {
   const { balances, simplified, baseCurrency } = balData;
   return (
     <>
@@ -528,9 +717,13 @@ function BalancesTab({ group, expenses, balData, user, memberName, onSettle }) {
                 <b>{memberName(t.from)}</b> owes <b>{memberName(t.to)}</b>
               </div>
               <div style={{ fontWeight: 700 }}>{money(t.amount, baseCurrency)}</div>
-              {(t.from === user.id || t.to === user.id) && (
-                <button className="btn-ghost" onClick={() => onSettle(t.from, t.to, t.amount)}>Settle</button>
-              )}
+              {(() => {
+                const pending = settlements.find((settlement) => settlement.status !== "settled" && settlement.from === t.from && settlement.to === t.to);
+                if (pending) return <span className="pill pill-amber">Awaiting confirmation</span>;
+                return t.from === user.id
+                  ? <button className="btn-ghost" onClick={() => onSettle(t.from, t.to, t.amount)}>Settle</button>
+                  : null;
+              })()}
             </div>
           ))}
       </div>
@@ -618,8 +811,14 @@ function ActivityTab({ expenses, settlements, memberName }) {
         </div>
       ) : (
         <div className="split-row" key={i}>
-          <span style={{ width: 22 }}>✅</span>
-          <div style={{ flex: 1, fontSize: 13.5 }}>{memberName(it.s.from)} paid {memberName(it.s.to)} {money(it.s.amount, it.s.currency)}</div>
+          <span style={{ width: 22 }}>{it.s.status === "settled" ? "✅" : it.s.status === "reported_problem" ? "⚠️" : "⏳"}</span>
+          <div style={{ flex: 1, fontSize: 13.5 }}>
+            {it.s.status === "settled"
+              ? <>{memberName(it.s.from)} paid {memberName(it.s.to)} <b>{money(it.s.amount, it.s.currency)}</b></>
+              : it.s.status === "reported_problem"
+                ? <>{memberName(it.s.to)} reported a problem with the payment to {memberName(it.s.from)} · <b>{money(it.s.amount, it.s.currency)}</b></>
+                : <>{memberName(it.s.from)} marked <b>{money(it.s.amount, it.s.currency)}</b> as paid · awaiting {memberName(it.s.to)}’s confirmation</>}
+          </div>
           <div className="small muted">{it.date}</div>
         </div>
       ))}

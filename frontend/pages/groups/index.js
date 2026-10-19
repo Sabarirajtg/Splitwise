@@ -17,13 +17,52 @@ export default function Groups() {
   const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState({});
   const [busy, setBusy] = useState(false);
+  const [pendingSettlements, setPendingSettlements] = useState([]);
+  const [profile, setProfile] = useState(null);
+  const [upiDraft, setUpiDraft] = useState("");
+  const [upiEditorOpen, setUpiEditorOpen] = useState(false);
+  const [savingUpi, setSavingUpi] = useState(false);
+  const [upiSetupDismissed, setUpiSetupDismissed] = useState(false);
 
   useEffect(() => {
     const session = getSession();
     if (!session) { router.replace("/login"); return; }
     setUser(session);
+    setUpiSetupDismissed(localStorage.getItem("splitshare_upi_setup_dismissed_" + session.id) === "1");
     loadGroups(session.id);
+    api.getUser(session.id).then((currentUser) => {
+      setProfile(currentUser);
+      setUpiDraft(currentUser.upiId || "");
+    }).catch(() => setProfile(null));
   }, []);
+
+  // Keep the in-app attention list current while the page is open and refresh
+  // immediately when the user returns to the tab/app. This is not push messaging.
+  useEffect(() => {
+    if (!user) return undefined;
+    let active = true;
+    async function refreshPending() {
+      try {
+        const pending = await api.pendingSettlements(user.id);
+        if (active) setPendingSettlements(Array.isArray(pending) ? pending : []);
+      } catch {
+        // Keep the last known list visible if the network is temporarily unavailable.
+      }
+    }
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible") refreshPending();
+    }
+    window.addEventListener("focus", refreshPending);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    const intervalId = window.setInterval(refreshPending, 30000);
+    refreshPending();
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshPending);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.clearInterval(intervalId);
+    };
+  }, [user]);
 
   async function loadGroups(userId) {
     try {
@@ -37,7 +76,34 @@ export default function Groups() {
       } catch { balMap[g.id] = 0; }
     }
     setBalances(balMap);
+    try {
+      const pending = await api.pendingSettlements(userId);
+      setPendingSettlements(Array.isArray(pending) ? pending : []);
+    } catch {
+      setPendingSettlements([]);
+    }
     } catch (e) { setGroups([]); showToast(e.message || "Could not load groups", "error"); }
+  }
+
+  function dismissUpiSetup() {
+    localStorage.setItem("splitshare_upi_setup_dismissed_" + user.id, "1");
+    setUpiSetupDismissed(true);
+    setUpiEditorOpen(false);
+  }
+
+  async function saveUpi() {
+    setSavingUpi(true);
+    try {
+      const updated = await api.updateUpi(user.id, upiDraft.trim());
+      setProfile((previous) => ({ ...(previous || {}), ...updated }));
+      setUpiEditorOpen(false);
+      dismissUpiSetup();
+      showToast("UPI ID saved");
+    } catch (e) {
+      showToast(e.message || "Could not save UPI ID", "error");
+    } finally {
+      setSavingUpi(false);
+    }
   }
 
   async function createGroup() {
@@ -79,6 +145,65 @@ export default function Groups() {
         <button className="btn-ghost" onClick={logout}>Log out</button>
       </div>
       <div className="screen">
+        {pendingSettlements.length > 0 && (
+          <section className="needs-attention" aria-label="Needs attention">
+            <div className="needs-attention-heading">
+              <div><h2>Needs attention</h2><p className="small muted">Payment updates waiting for you</p></div>
+              <span className="attention-count">{pendingSettlements.length}</span>
+            </div>
+            {pendingSettlements.slice(0, 3).map((item) => {
+              const isRecipient = item.to === user.id;
+              const message = item.status === "reported_problem"
+                ? (isRecipient ? "You reported a payment issue." : item.toName + " reported a payment issue.")
+                : item.fromName + " marked a payment as paid.";
+              return (
+                <button className="needs-attention-item" key={item.id} onClick={() => router.push("/groups/" + item.groupId)}>
+                  <span className="attention-item-icon" aria-hidden="true">↗</span>
+                  <span className="attention-item-copy"><strong>{money(item.amount, item.currency)}</strong><span>{message}</span><span className="small muted">{item.groupName}</span></span>
+                  <span className="attention-item-action">Review</span>
+                </button>
+              );
+            })}
+            {pendingSettlements.length > 3 && <p className="small muted">And {pendingSettlements.length - 3} more payment update(s).</p>}
+          </section>
+        )}
+        {profile && profile.upiId && !upiEditorOpen && (
+          <div className="upi-saved-row">
+            <span><strong>UPI ID</strong> · {profile.upiId}</span>
+            <button className="linkbtn" onClick={() => { setUpiDraft(profile.upiId); setUpiEditorOpen(true); }}>Edit</button>
+          </div>
+        )}
+
+        {profile && !profile.upiId && upiSetupDismissed && (
+          <p className="upi-later-prompt small muted">
+            Want to receive payments through UPI?{" "}
+            <button className="linkbtn" onClick={() => { setUpiSetupDismissed(false); setUpiEditorOpen(true); }}>
+              Set up UPI
+            </button>
+          </p>
+        )}
+
+        {profile && (upiEditorOpen || (!profile.upiId && !upiSetupDismissed)) && (
+          <section className="upi-setup-card">
+            <div className="upi-setup-icon" aria-hidden="true">₹</div>
+            <div className="upi-setup-content">
+              <h3>{profile.upiId ? "Update your UPI ID" : "Make receiving payments easier"}</h3>
+              <p className="small muted">{profile.upiId ? "Update the UPI ID group members should use to pay you." : "Add your UPI ID once so group members can pay you more easily. You can skip this for now."}</p>
+              {upiEditorOpen ? (
+                <>
+                  <label htmlFor="splitshare-upi-id">Your UPI ID</label>
+                  <input id="splitshare-upi-id" value={upiDraft} onChange={(event) => setUpiDraft(event.target.value)} placeholder="name@bank" autoComplete="off" />
+                  <div className="upi-setup-actions">
+                    <button className="btn-primary" onClick={saveUpi} disabled={savingUpi || !upiDraft.trim()}>{savingUpi ? "Saving…" : "Save UPI ID"}</button>
+                    <button className="linkbtn" onClick={dismissUpiSetup} disabled={savingUpi}>{profile.upiId ? "Cancel" : "Not now"}</button>
+                  </div>
+                </>
+              ) : (
+                <div className="upi-setup-actions"><button className="btn-primary" onClick={() => setUpiEditorOpen(true)}>Set up once</button><button className="linkbtn" onClick={dismissUpiSetup}>Not now</button></div>
+              )}
+            </div>
+          </section>
+        )}
         {groups === null && <div className="groups-loading" aria-label="Loading groups">{[0, 1, 2].map((item) => <div className="card skeleton-group-card" key={item}><div className="skeleton skeleton-line skeleton-group-title" /><div className="skeleton skeleton-line skeleton-group-meta" /><div className="skeleton skeleton-line skeleton-group-badge" /></div>)}</div>}
         {groups && groups.length === 0 && (
           <div className="empty">No groups yet.<br />Create one or join with a group code.</div>
