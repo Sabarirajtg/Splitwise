@@ -10,16 +10,20 @@ export default function InviteLanding() {
   const [invitation, setInvitation] = useState(null);
   const [error, setError] = useState("");
   const [joining, setJoining] = useState(false);
+  const [alreadyMember, setAlreadyMember] = useState(false);
 
   useEffect(() => {
     if (!router.isReady || !token) return;
 
     let isMounted = true;
 
+    const user = getSession();
     api
-      .getInvite(token)
+      .getInvite(token, user && user.id)
       .then((result) => {
-        if (isMounted) setInvitation(result);
+        if (!isMounted) return;
+        setInvitation(result);
+        setAlreadyMember(Boolean(user && result.isMember));
       })
       .catch((requestError) => {
         if (isMounted) {
@@ -76,17 +80,36 @@ export default function InviteLanding() {
             </>
           ) : (
             <>
-              <p className="muted">You’ve been invited to join</p>
+              <p className="muted">
+                {alreadyMember
+                  ? "You are already part of this group."
+                  : "You’ve been invited to join"}
+              </p>
               <h2 style={{ margin: "8px 0 20px" }}>
                 {invitation.groupName}
               </h2>
-              <button
-                className="btn-primary"
-                onClick={joinGroup}
-                disabled={joining}
-              >
-                {joining ? "Joining…" : "Join group"}
-              </button>
+              {alreadyMember ? (
+                <button
+                  className="btn-primary"
+                  onClick={() => {
+                    const groupId =
+                      invitation.groupId ||
+                      (invitation.group && (invitation.group.id || invitation.group._id)) ||
+                      invitation.group;
+                    if (groupId) router.push("/groups/" + groupId);
+                  }}
+                >
+                  Open group
+                </button>
+              ) : (
+                <button
+                  className="btn-primary"
+                  onClick={joinGroup}
+                  disabled={joining}
+                >
+                  {joining ? "Joining…" : "Join group"}
+                </button>
+              )}
             </>
           )}
         </div>
