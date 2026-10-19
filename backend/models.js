@@ -6,7 +6,8 @@ const UserSchema = new Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   googleId: { type: String, required: true, unique: true },
-  avatarUrl: { type: String }
+  avatarUrl: { type: String },
+  upiId: { type: String, default: null }
 });
 
 const GroupSchema = new Schema({
@@ -52,7 +53,13 @@ const SettlementSchema = new Schema({
   to: String,
   amount: Number,
   currency: String,
-  date: String
+  date: String,
+  status: { type: String, enum: ["pending_confirmation", "reported_problem", "settled"], default: "settled" },
+  reportedBy: { type: String, default: null },
+  confirmedBy: { type: String, default: null },
+  reportedAt: { type: Date, default: null },
+  confirmedAt: { type: Date, default: null },
+  issueNote: { type: String, default: null }
 }, { timestamps: true });
 
 module.exports = {

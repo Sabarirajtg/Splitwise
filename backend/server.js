@@ -50,7 +50,7 @@ app.post("/api/auth/google", async (req, res) => {
       user.avatarUrl = avatarUrl;
       await user.save();
     }
-    res.json({ id: user._id, name: user.name, avatarUrl: user.avatarUrl || null });
+    res.json({ id: user._id, name: user.name, avatarUrl: user.avatarUrl || null, upiId: user.upiId || null });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Server error" });
@@ -61,6 +61,22 @@ app.get("/api/users/:id", async (req, res) => {
   const user = await User.findById(req.params.id);
   if (!user) return res.status(404).json({ error: "Not found" });
   res.json({ id: user._id, name: user.name, avatarUrl: user.avatarUrl || null });
+});
+app.put("/api/users/:id/upi", async (req, res) => {
+  if (!requireInternal(req, res)) return;
+  const { userId, upiId } = req.body || {};
+  if (!userId || userId !== req.params.id) {
+    return res.status(403).json({ error: "You can only update your own UPI ID" });
+  }
+  const normalized = typeof upiId === "string" ? upiId.trim() : "";
+  if (normalized && !/^[A-Za-z0-9._-]{2,128}@[A-Za-z0-9.-]{2,64}$/.test(normalized)) {
+    return res.status(400).json({ error: "Enter a valid UPI ID, such as name@bank" });
+  }
+  const user = await User.findById(req.params.id);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  user.upiId = normalized || null;
+  await user.save();
+  res.json({ id: user._id, upiId: user.upiId || null });
 });
 
 // ---------- Currencies / FX ----------
@@ -139,7 +155,7 @@ app.get("/api/groups/:id", async (req, res) => {
   res.json({
     id: group._id, name: group.name, baseCurrency: group.baseCurrency, spendingCurrency: group.spendingCurrency || group.baseCurrency,
     currencyConfigured: Boolean(group.spendingCurrency), memberIds: group.memberIds, simplificationOptOutIds: group.simplificationOptOutIds || [], inviteToken: group.inviteToken || null,
-    members: members.map(m => ({ id: m._id, name: m.name }))
+    members: members.map(m => ({ id: m._id, name: m.name, upiId: m.upiId || null }))
   });
 });
 
