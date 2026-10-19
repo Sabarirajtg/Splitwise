@@ -580,8 +580,7 @@ app.get("/api/users/:userId/pending-settlements", async (req, res) => {
   const settlements = await Settlement.find({
     $or: [
       { to: userId, status: "pending_confirmation" },
-      { from: userId, status: "reported_problem" },
-      { to: userId, status: "reported_problem" }
+      { from: userId, status: "reported_problem" }
     ]
   }).sort({ createdAt: -1 });
   if (!settlements.length) return res.json([]);
