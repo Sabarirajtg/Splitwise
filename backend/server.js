@@ -379,6 +379,7 @@ app.get("/api/invitations/:token", async (req, res) => {
   }
 
   res.json({
+    groupId: group._id,
     groupName: group.name,
     expiresAt: group.inviteExpiresAt,
   });
