@@ -710,8 +710,14 @@ function ActivityTab({ expenses, settlements, memberName }) {
         </div>
       ) : (
         <div className="split-row" key={i}>
-          <span style={{ width: 22 }}>✅</span>
-          <div style={{ flex: 1, fontSize: 13.5 }}>{memberName(it.s.from)} paid {memberName(it.s.to)} {money(it.s.amount, it.s.currency)}</div>
+          <span style={{ width: 22 }}>{it.s.status === "settled" ? "✅" : it.s.status === "reported_problem" ? "⚠️" : "⏳"}</span>
+          <div style={{ flex: 1, fontSize: 13.5 }}>
+            {it.s.status === "settled"
+              ? <>{memberName(it.s.from)} paid {memberName(it.s.to)} <b>{money(it.s.amount, it.s.currency)}</b></>
+              : it.s.status === "reported_problem"
+                ? <>{memberName(it.s.to)} reported a problem with the payment to {memberName(it.s.from)} · <b>{money(it.s.amount, it.s.currency)}</b></>
+                : <>{memberName(it.s.from)} marked <b>{money(it.s.amount, it.s.currency)}</b> as paid · awaiting {memberName(it.s.to)}’s confirmation</>}
+          </div>
           <div className="small muted">{it.date}</div>
         </div>
       ))}
