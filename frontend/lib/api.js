@@ -40,7 +40,7 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
-  getInvite: (token) => requestNext(`/api/invitations/${encodeURIComponent(token)}`),
+  getInvite: (token, userId) => requestNext("/api/invitations/" + encodeURIComponent(token) + (userId ? "?userId=" + encodeURIComponent(userId) : "")),
   joinInvite: (token, userId) =>
     requestNext(`/api/invitations/${encodeURIComponent(token)}/join`, {
       method: "POST",

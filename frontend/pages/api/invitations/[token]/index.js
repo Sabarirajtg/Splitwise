@@ -13,9 +13,11 @@ export default async function handler(req, res) {
     process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
   try {
-    const response = await fetch(
-      `${apiBaseUrl}/api/invitations/${encodeURIComponent(token)}`,
-      {
+    const userId = typeof req.query.userId === "string" ? req.query.userId : "";
+    const lookupUrl = new URL(`${apiBaseUrl}/api/invitations/${encodeURIComponent(token)}`);
+    if (userId) lookupUrl.searchParams.set("userId", userId);
+
+    const response = await fetch(lookupUrl.toString(), {
         method: "GET",
         headers: {
           "Content-Type": "application/json",

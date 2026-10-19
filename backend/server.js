@@ -378,10 +378,12 @@ app.get("/api/invitations/:token", async (req, res) => {
     });
   }
 
+  const userId = typeof req.query.userId === "string" ? req.query.userId : "";
   res.json({
     groupId: group._id,
     groupName: group.name,
     expiresAt: group.inviteExpiresAt,
+    isMember: Boolean(userId && group.memberIds.some((id) => String(id) === userId)),
   });
 });
 

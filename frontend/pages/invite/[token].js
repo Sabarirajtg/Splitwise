@@ -17,34 +17,13 @@ export default function InviteLanding() {
 
     let isMounted = true;
 
+    const user = getSession();
     api
-      .getInvite(token)
-      .then(async (result) => {
+      .getInvite(token, user && user.id)
+      .then((result) => {
         if (!isMounted) return;
         setInvitation(result);
-
-        const user = getSession();
-        if (!user || !user.id) return;
-
-        try {
-          const response = await api.userGroups(user.id);
-          const groups = Array.isArray(response)
-            ? response
-            : Array.isArray(response.groups)
-              ? response.groups
-              : [];
-          const invitedGroupId =
-            result.groupId ||
-            (result.group && (result.group.id || result.group._id)) ||
-            result.group;
-          const isMember = invitedGroupId && groups.some((group) => {
-            const groupId = group.id || group._id;
-            return groupId && String(groupId) === String(invitedGroupId);
-          });
-          if (isMounted) setAlreadyMember(Boolean(isMember));
-        } catch {
-          // Keep the invite join flow available if membership lookup fails.
-        }
+        setAlreadyMember(Boolean(user && result.isMember));
       })
       .catch((requestError) => {
         if (isMounted) {
