@@ -45,6 +45,32 @@ npm run dev
 
 Open http://localhost:3000, log in with a name + PIN, and try it out.
 
+## Test Google sign-in from a phone
+
+The default `.env.local` values (`NEXTAUTH_URL=http://localhost:3000` and
+`NEXT_PUBLIC_API_URL=http://localhost:4000`) are for a browser on the same
+computer. On a phone, `localhost` refers to the phone itself, not your laptop.
+Opening the app at `http://<laptop-LAN-IP>:3000` can load the page, but Google
+OAuth still cannot use that raw HTTP LAN IP as its callback host. Google requires
+HTTPS for non-localhost redirect URIs and does not allow raw IP address hosts.
+
+For a phone test with Google sign-in, use temporary HTTPS tunnels for both
+frontend and backend (for example, one tunnel for ports 3000 and 4000):
+
+1. Start the backend on port 4000 and frontend on port 3000.
+2. Create an HTTPS tunnel to port 3000 and another HTTPS tunnel to port 4000.
+3. In `frontend/.env.local`, set `NEXTAUTH_URL` to the frontend HTTPS tunnel URL
+   and `NEXT_PUBLIC_API_URL` to the backend HTTPS tunnel URL.
+4. In Google Cloud Console, add the frontend tunnel origin under **Authorized
+   JavaScript origins** and add
+   `https://<frontend-tunnel-host>/api/auth/callback/google` under **Authorized
+   redirect URIs** for the same OAuth client ID.
+5. Restart the frontend after changing environment variables, then open the
+   frontend HTTPS tunnel URL on the phone and try signing in again.
+
+Keep tunnels temporary and use test data only: the backend API becomes reachable
+from the internet while its tunnel is active. Stop both tunnels when testing is done.
+
 ## 3. Deploy
 
 **Backend (Express API) → Render or Railway**

@@ -24,16 +24,27 @@ export default function Login() {
   // session the rest of the app already reads via lib/api.js.
   useEffect(() => {
     if (status !== "authenticated" || !googleSession) return;
+
     if (googleSession.appError) {
       setError(googleSession.appError);
       return;
     }
-    if (googleSession.appUserId) {
-      setSession({ id: googleSession.appUserId, name: googleSession.appUserName });
-      const next = typeof router.query.next === "string" && router.query.next.startsWith("/") ? router.query.next : "/groups";
-      router.push(next);
+
+    if (!googleSession.appUserId) {
+      setError(
+        "Google sign-in succeeded, but SplitShare could not create your app session. " +
+        "Check the frontend/backend URL settings and Google OAuth callback URL, then try again."
+      );
+      return;
     }
-  }, [status, googleSession]);
+
+    setSession({ id: googleSession.appUserId, name: googleSession.appUserName });
+    const next =
+      typeof router.query.next === "string" && router.query.next.startsWith("/")
+        ? router.query.next
+        : "/groups";
+    router.replace(next);
+  }, [status, googleSession, router]);
 
   return (
     <div className="container" style={{ paddingTop: 100, textAlign: "center" }}>
