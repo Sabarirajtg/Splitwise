@@ -21,6 +21,10 @@ export default function GroupDetail() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [invite, setInvite] = useState(null);
   const [settleDraft, setSettleDraft] = useState(null);
+  const [upiEditorOpen, setUpiEditorOpen] = useState(false);
+  const [upiDraft, setUpiDraft] = useState("");
+  const [savingUpi, setSavingUpi] = useState(false);
+  const [upiPromptDismissed, setUpiPromptDismissed] = useState(false);
 
   useEffect(() => {
     const session = getSession();
@@ -145,6 +149,28 @@ export default function GroupDetail() {
     }
   }
 
+  async function saveUpiId() {
+    if (!user || !upiDraft.trim()) return;
+    setSavingUpi(true);
+    try {
+      const updated = await api.updateUpi(user.id, upiDraft.trim());
+      setGroup((previous) => previous ? {
+        ...previous,
+        members: previous.members.map((member) =>
+          member.id === user.id ? { ...member, upiId: updated.upiId || null } : member
+        ),
+      } : previous);
+      setUpiDraft(updated.upiId || "");
+      setUpiEditorOpen(false);
+      setUpiPromptDismissed(false);
+      showToast("UPI ID saved");
+    } catch (error) {
+      showToast(error.message || "Could not save UPI ID", "error");
+    } finally {
+      setSavingUpi(false);
+    }
+  }
+
   if (!group) {
     return (
       <div className="container group-loading" aria-label="Loading group">
@@ -213,6 +239,39 @@ export default function GroupDetail() {
           <button className={`tab ${tab === "activity" ? "active" : ""}`} onClick={() => setTab("activity")}>Activity</button>
           <button className={`tab ${tab === "settings" ? "active" : ""}`} onClick={() => setTab("settings")}>Settings</button>
         </div>
+
+        {group.members.some((member) => member.id === user.id && !member.upiId) && !upiPromptDismissed && (
+          <section className="upi-setup-card" aria-label="UPI setup">
+            <div className="upi-setup-icon" aria-hidden="true">₹</div>
+            <div className="upi-setup-content">
+              <h3>{upiEditorOpen ? "Add your UPI ID" : "Want to receive payments through UPI?"}</h3>
+              <p className="small muted">Add your UPI ID so group members can pay you more easily when settling balances. You can skip this for now.</p>
+              {upiEditorOpen ? (
+                <>
+                  <label htmlFor="splitshare-upi-id">Your UPI ID</label>
+                  <input
+                    id="splitshare-upi-id"
+                    value={upiDraft}
+                    onChange={(event) => setUpiDraft(event.target.value)}
+                    placeholder="name@bank"
+                    autoComplete="off"
+                  />
+                  <div className="upi-setup-actions">
+                    <button className="btn-primary" onClick={saveUpiId} disabled={savingUpi || !upiDraft.trim()}>
+                      {savingUpi ? "Saving…" : "Save UPI ID"}
+                    </button>
+                    <button className="linkbtn" onClick={() => setUpiEditorOpen(false)} disabled={savingUpi}>Cancel</button>
+                  </div>
+                </>
+              ) : (
+                <div className="upi-setup-actions">
+                  <button className="btn-primary" onClick={() => { setUpiDraft(""); setUpiEditorOpen(true); }}>Set up UPI</button>
+                  <button className="linkbtn" onClick={() => setUpiPromptDismissed(true)}>Not now</button>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {groupPendingSettlements.length > 0 && (
           <PendingSettlementPanel settlements={groupPendingSettlements} user={user} memberName={memberName} currency={group.baseCurrency} onConfirm={confirmSettlement} onReportProblem={reportSettlementProblem} />
