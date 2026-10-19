@@ -60,7 +60,7 @@ app.post("/api/auth/google", async (req, res) => {
 app.get("/api/users/:id", async (req, res) => {
   const user = await User.findById(req.params.id);
   if (!user) return res.status(404).json({ error: "Not found" });
-  res.json({ id: user._id, name: user.name, avatarUrl: user.avatarUrl || null });
+  res.json({ id: user._id, name: user.name, avatarUrl: user.avatarUrl || null, upiId: user.upiId || null });
 });
 app.put("/api/users/:id/upi", async (req, res) => {
   if (!requireInternal(req, res)) return;
@@ -511,16 +511,91 @@ app.post("/api/groups/:id/recurring/process", async (req, res) => {
 
 // ---------- Settlements & balances ----------
 app.get("/api/groups/:id/settlements", async (req, res) => {
-  const settlements = await Settlement.find({ groupId: req.params.id }).sort({ date: -1 });
-  res.json(settlements.map(s => ({ id: s._id, groupId: s.groupId, from: s.from, to: s.to, amount: s.amount, currency: s.currency, date: s.date })));
+  const settlements = await Settlement.find({ groupId: req.params.id }).sort({ createdAt: -1, date: -1 });
+  res.json(settlements.map(s => ({
+    id: s._id, groupId: s.groupId, from: s.from, to: s.to, amount: s.amount, currency: s.currency, date: s.date,
+    status: s.status || "settled", reportedBy: s.reportedBy || null, confirmedBy: s.confirmedBy || null,
+    reportedAt: s.reportedAt || s.createdAt || null, confirmedAt: s.confirmedAt || null, issueNote: s.issueNote || null
+  })));
 });
 
+// A payer report remains pending until the recipient confirms receipt.
 app.post("/api/groups/:id/settlements", async (req, res) => {
-  const { from, to, amount, currency } = req.body;
+  const { from, to, amount, currency, userId } = req.body || {};
+  const group = await Group.findById(req.params.id);
+  if (!group) return res.status(404).json({ error: "Group not found" });
+  if (!userId || userId !== from || !isGroupMember(group, userId)) {
+    return res.status(403).json({ error: "Only the person paying can mark this payment as paid" });
+  }
+  if (!to || to === from || !isGroupMember(group, to)) {
+    return res.status(400).json({ error: "Choose a valid recipient in this group" });
+  }
+  if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) {
+    return res.status(400).json({ error: "Enter a valid payment amount" });
+  }
+  if (currency !== group.baseCurrency) {
+    return res.status(400).json({ error: "Settlement amount must use the group base currency" });
+  }
+  const existingPending = await Settlement.findOne({ groupId: group._id, from, to, status: { $in: ["pending_confirmation", "reported_problem"] } });
+  if (existingPending) return res.status(409).json({ error: "There is already a payment waiting for confirmation between these members" });
+  const now = new Date();
   const s = await Settlement.create({
-    _id: nanoid(10), groupId: req.params.id, from, to, amount, currency, date: new Date().toISOString().slice(0, 10)
+    _id: nanoid(10), groupId: group._id, from, to, amount: Math.round(Number(amount) * 100) / 100, currency,
+    date: now.toISOString().slice(0, 10), status: "pending_confirmation", reportedBy: userId, reportedAt: now
   });
-  res.json({ id: s._id, from: s.from, to: s.to, amount: s.amount, currency: s.currency, date: s.date });
+  res.status(201).json({ id: s._id, groupId: s.groupId, from: s.from, to: s.to, amount: s.amount, currency: s.currency, date: s.date, status: s.status, reportedAt: s.reportedAt });
+});
+
+app.post("/api/groups/:groupId/settlements/:settlementId/confirm", async (req, res) => {
+  const { userId } = req.body || {};
+  const group = await Group.findById(req.params.groupId);
+  if (!group) return res.status(404).json({ error: "Group not found" });
+  if (!userId || !isGroupMember(group, userId)) return res.status(403).json({ error: "Only group members can confirm payments" });
+  const settlement = await Settlement.findOne({ _id: req.params.settlementId, groupId: group._id });
+  if (!settlement) return res.status(404).json({ error: "Payment report not found" });
+  if (settlement.to !== userId) return res.status(403).json({ error: "Only the recipient can confirm this payment" });
+  if ((settlement.status || "settled") === "settled") return res.json({ id: settlement._id, status: "settled", confirmedAt: settlement.confirmedAt || settlement.updatedAt });
+  settlement.status = "settled"; settlement.confirmedBy = userId; settlement.confirmedAt = new Date(); settlement.issueNote = null;
+  await settlement.save();
+  res.json({ id: settlement._id, status: settlement.status, confirmedAt: settlement.confirmedAt });
+});
+
+app.post("/api/groups/:groupId/settlements/:settlementId/report-problem", async (req, res) => {
+  const { userId, note } = req.body || {};
+  const group = await Group.findById(req.params.groupId);
+  if (!group) return res.status(404).json({ error: "Group not found" });
+  if (!userId || !isGroupMember(group, userId)) return res.status(403).json({ error: "Only group members can report payment issues" });
+  const settlement = await Settlement.findOne({ _id: req.params.settlementId, groupId: group._id });
+  if (!settlement) return res.status(404).json({ error: "Payment report not found" });
+  if (settlement.to !== userId) return res.status(403).json({ error: "Only the recipient can report this payment" });
+  if ((settlement.status || "settled") === "settled") return res.status(409).json({ error: "This payment is already settled" });
+  settlement.status = "reported_problem"; settlement.reportedBy = userId; settlement.reportedAt = new Date();
+  settlement.issueNote = typeof note === "string" ? note.trim().slice(0, 300) : "Recipient has not confirmed receipt";
+  await settlement.save();
+  res.json({ id: settlement._id, status: settlement.status, reportedAt: settlement.reportedAt });
+});
+
+app.get("/api/users/:userId/pending-settlements", async (req, res) => {
+  const userId = req.params.userId;
+  const settlements = await Settlement.find({
+    $or: [
+      { to: userId, status: "pending_confirmation" },
+      { from: userId, status: "reported_problem" },
+      { to: userId, status: "reported_problem" }
+    ]
+  }).sort({ createdAt: -1 });
+  if (!settlements.length) return res.json([]);
+  const groupIds = [...new Set(settlements.map(s => s.groupId))];
+  const memberIds = [...new Set(settlements.flatMap(s => [s.from, s.to]))];
+  const [groups, users] = await Promise.all([Group.find({ _id: { $in: groupIds } }), User.find({ _id: { $in: memberIds } })]);
+  const groupById = new Map(groups.map(g => [String(g._id), g]));
+  const userById = new Map(users.map(u => [String(u._id), u]));
+  res.json(settlements.map(s => ({
+    id: s._id, groupId: s.groupId, groupName: (groupById.get(String(s.groupId)) || {}).name || "Group",
+    from: s.from, fromName: (userById.get(String(s.from)) || {}).name || "A member",
+    to: s.to, toName: (userById.get(String(s.to)) || {}).name || "A member",
+    amount: s.amount, currency: s.currency, status: s.status, date: s.date, createdAt: s.createdAt, issueNote: s.issueNote || null
+  })));
 });
 
 app.get("/api/groups/:id/balances", async (req, res) => {
@@ -528,27 +603,23 @@ app.get("/api/groups/:id/balances", async (req, res) => {
   if (!group) return res.status(404).json({ error: "Not found" });
   const expenses = await Expense.find({ groupId: group._id });
   const settlements = await Settlement.find({ groupId: group._id });
-
   const bal = {};
   group.memberIds.forEach(id => (bal[id] = 0));
   expenses.forEach(e => {
-    // amountInBase is the paid amount converted to group's base currency
     const baseAmount = e.amountInBase != null ? e.amountInBase : e.amount;
     const ratio = baseAmount / e.amount;
     bal[e.paidBy] = (bal[e.paidBy] || 0) + baseAmount;
-    e.splits.forEach(s => {
-      bal[s.userId] = (bal[s.userId] || 0) - Math.round(s.amount * ratio * 100) / 100;
-    });
+    e.splits.forEach(s => { bal[s.userId] = (bal[s.userId] || 0) - Math.round(s.amount * ratio * 100) / 100; });
   });
   settlements.forEach(s => {
+    // Old records without status are completed; new pending reports never change balances.
+    if ((s.status || "settled") !== "settled") return;
     bal[s.from] = (bal[s.from] || 0) + s.amount;
     bal[s.to] = (bal[s.to] || 0) - s.amount;
   });
-
-  const breakdown = expenseSummary(expenses.map(e=>({amount:e.amount,currency:e.currency,amountInBase:e.amountInBase,splits:e.splits})),group.memberIds,group.baseCurrency);
- res.json({balances:bal,simplified:simplifyDebts(bal,group.simplificationOptOutIds||[]),baseCurrency:group.baseCurrency,expenseBreakdown:breakdown});
+  const breakdown = expenseSummary(expenses.map(e => ({ amount: e.amount, currency: e.currency, amountInBase: e.amountInBase, splits: e.splits })), group.memberIds, group.baseCurrency);
+  res.json({ balances: bal, simplified: simplifyDebts(bal, group.simplificationOptOutIds || []), baseCurrency: group.baseCurrency, expenseBreakdown: breakdown });
 });
-
 const PORT = process.env.PORT || 4000;
 connectDB().then(() => {
   app.listen(PORT, () => console.log(`SplitShare API listening on port ${PORT}`));
