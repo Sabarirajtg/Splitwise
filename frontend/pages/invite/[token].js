@@ -10,6 +10,7 @@ export default function InviteLanding() {
   const [invitation, setInvitation] = useState(null);
   const [error, setError] = useState("");
   const [joining, setJoining] = useState(false);
+  const [alreadyMember, setAlreadyMember] = useState(false);
 
   useEffect(() => {
     if (!router.isReady || !token) return;
@@ -18,8 +19,32 @@ export default function InviteLanding() {
 
     api
       .getInvite(token)
-      .then((result) => {
-        if (isMounted) setInvitation(result);
+      .then(async (result) => {
+        if (!isMounted) return;
+        setInvitation(result);
+
+        const user = getSession();
+        if (!user || !user.id) return;
+
+        try {
+          const response = await api.userGroups(user.id);
+          const groups = Array.isArray(response)
+            ? response
+            : Array.isArray(response.groups)
+              ? response.groups
+              : [];
+          const invitedGroupId =
+            result.groupId ||
+            (result.group && (result.group.id || result.group._id)) ||
+            result.group;
+          const isMember = invitedGroupId && groups.some((group) => {
+            const groupId = group.id || group._id;
+            return groupId && String(groupId) === String(invitedGroupId);
+          });
+          if (isMounted) setAlreadyMember(Boolean(isMember));
+        } catch {
+          // Keep the invite join flow available if membership lookup fails.
+        }
       })
       .catch((requestError) => {
         if (isMounted) {
@@ -76,17 +101,36 @@ export default function InviteLanding() {
             </>
           ) : (
             <>
-              <p className="muted">You’ve been invited to join</p>
+              <p className="muted">
+                {alreadyMember
+                  ? "You are already part of this group."
+                  : "You’ve been invited to join"}
+              </p>
               <h2 style={{ margin: "8px 0 20px" }}>
                 {invitation.groupName}
               </h2>
-              <button
-                className="btn-primary"
-                onClick={joinGroup}
-                disabled={joining}
-              >
-                {joining ? "Joining…" : "Join group"}
-              </button>
+              {alreadyMember ? (
+                <button
+                  className="btn-primary"
+                  onClick={() => {
+                    const groupId =
+                      invitation.groupId ||
+                      (invitation.group && (invitation.group.id || invitation.group._id)) ||
+                      invitation.group;
+                    if (groupId) router.push("/groups/" + groupId);
+                  }}
+                >
+                  Open group
+                </button>
+              ) : (
+                <button
+                  className="btn-primary"
+                  onClick={joinGroup}
+                  disabled={joining}
+                >
+                  {joining ? "Joining…" : "Join group"}
+                </button>
+              )}
             </>
           )}
         </div>
