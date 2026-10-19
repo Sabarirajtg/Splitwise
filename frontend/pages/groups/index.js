@@ -36,6 +36,34 @@ export default function Groups() {
     }).catch(() => setProfile(null));
   }, []);
 
+  // Keep the in-app attention list current while the page is open and refresh
+  // immediately when the user returns to the tab/app. This is not push messaging.
+  useEffect(() => {
+    if (!user) return undefined;
+    let active = true;
+    async function refreshPending() {
+      try {
+        const pending = await api.pendingSettlements(user.id);
+        if (active) setPendingSettlements(Array.isArray(pending) ? pending : []);
+      } catch {
+        // Keep the last known list visible if the network is temporarily unavailable.
+      }
+    }
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible") refreshPending();
+    }
+    window.addEventListener("focus", refreshPending);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    const intervalId = window.setInterval(refreshPending, 30000);
+    refreshPending();
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshPending);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.clearInterval(intervalId);
+    };
+  }, [user]);
+
   async function loadGroups(userId) {
     try {
     const list = await api.userGroups(userId);
