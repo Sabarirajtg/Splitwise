@@ -895,85 +895,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 }
 
 
-/* Stage 1: payment reporting and recipient confirmation */
-.needs-attention, .pending-payments {
-  border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--card); padding: 16px; margin-bottom: 18px;
-  animation: attention-enter .32s ease-out both;
+/* Remove the default blue/grey tap flash on touch devices without hiding keyboard focus */
+html, body, #__next, *, *::before, *::after {
+  -webkit-tap-highlight-color: transparent;
 }
-.needs-attention-heading, .pending-payments-heading {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px;
+button, a, [role="button"], .card-tap, input, select, textarea {
+  touch-action: manipulation;
 }
-.needs-attention-heading h2 { font-size: 18px; margin-bottom: 4px; }
-.attention-count {
-  flex: 0 0 auto; display: inline-flex; justify-content: center; align-items: center;
-  min-width: 28px; height: 28px; padding: 0 8px; border-radius: 999px;
-  background: #E9D5FF; color: #5B21B6; font-weight: 800; font-size: 12px;
-  animation: attention-badge-enter .38s ease-out both;
-}
-.needs-attention-item {
-  display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
-  padding: 12px; margin-top: 8px; border-radius: 14px; border: 1px solid var(--border);
-  background: var(--bg); color: var(--text);
-}
-.needs-attention-item:hover { border-color: var(--accent); }
-.attention-item-icon {
-  display: flex; align-items: center; justify-content: center; flex: 0 0 34px;
-  width: 34px; height: 34px; border-radius: 11px; background: var(--purple-light);
-  color: var(--purple-dark); font-size: 19px;
-}
-.attention-item-copy { display: grid; gap: 3px; min-width: 0; flex: 1; }
-.attention-item-copy strong { font-size: 14px; }
-.attention-item-copy > span { font-size: 12px; overflow-wrap: anywhere; }
-.attention-item-action { flex: 0 0 auto; font-size: 12px; font-weight: 750; color: var(--accent); }
-.upi-setup-card {
-  display: flex; gap: 13px; padding: 16px; margin-bottom: 18px;
-  border: 1px solid var(--border); border-radius: var(--radius);
-  background: linear-gradient(130deg, var(--card), var(--purple-light));
-  animation: attention-enter .32s ease-out both;
-}
-.upi-setup-icon {
-  flex: 0 0 38px; width: 38px; height: 38px; display: grid; place-items: center;
-  border-radius: 12px; background: var(--gradient); color: #fff; font-size: 20px; font-weight: 800;
-}
-.upi-setup-content { flex: 1; min-width: 0; }
-.upi-setup-content h3 { font-size: 15px; margin: 1px 0 6px; }
-.upi-setup-content p { line-height: 1.45; margin: 0 0 12px; }
-.upi-setup-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.upi-setup-actions .btn-primary { width: auto; padding: 10px 14px; font-size: 13px; }
-.upi-setup-actions .linkbtn { font-size: 13px; }
-.pending-payments-heading { justify-content: flex-start; }
-.pending-payments-heading h3 { font-size: 16px; margin-bottom: 4px; }
-.pending-payment-item {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
-  padding: 13px 0; border-top: 1px solid var(--border);
-}
-.pending-payment-copy { min-width: 0; flex: 1; }
-.pending-payment-copy strong { font-size: 16px; }
-.pending-payment-copy p { margin: 5px 0 0; line-height: 1.45; }
-.pending-payment-actions { display: flex; flex-direction: column; align-items: stretch; gap: 7px; flex: 0 0 auto; }
-.pending-confirm-button { width: auto; padding: 9px 12px; font-size: 12px; }
-.pending-problem-button { background: transparent !important; color: var(--coral-dark) !important; border-color: var(--border) !important; padding: 8px 10px; font-size: 12px; }
-.payment-sheet h2 { font-size: 23px; }
-.payment-amount-card {
-  display: grid; gap: 7px; padding: 18px; margin: 18px 0 14px;
-  border: 1px solid var(--border); border-radius: 16px; background: var(--bg);
-}
-.payment-amount-card strong { font-size: 29px; letter-spacing: -.04em; }
-.payment-hint { padding: 12px 14px; border-radius: 12px; background: var(--purple-light); color: var(--text); font-size: 13px; line-height: 1.5; }
-.payment-mark-button { margin-top: 10px; }
-.payment-footnote { text-align: center; margin: 12px 0 0; line-height: 1.45; }
-@keyframes attention-enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes attention-badge-enter { from { opacity: .5; transform: scale(.86); } to { opacity: 1; transform: scale(1); } }
-@media (max-width: 420px) {
-  .needs-attention, .pending-payments { padding: 13px; }
-  .needs-attention-item { gap: 9px; padding: 10px; }
-  .attention-item-action { font-size: 11px; }
-  .upi-setup-card { gap: 10px; padding: 13px; }
-  .pending-payment-item { flex-direction: column; }
-  .pending-payment-actions { flex-direction: row; width: 100%; }
-  .pending-payment-actions > button { flex: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .needs-attention, .pending-payments, .upi-setup-card, .attention-count { animation: none !important; }
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible,
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent, var(--purple));
+  outline-offset: 2px;
 }
