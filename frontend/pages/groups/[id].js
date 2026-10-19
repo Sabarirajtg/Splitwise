@@ -32,6 +32,32 @@ export default function GroupDetail() {
     if (user && id) loadAll();
   }, [user, id]);
 
+  // Keep pending payment updates visible if the recipient already has a group open.
+  useEffect(() => {
+    if (!user || !id) return undefined;
+    let active = true;
+    async function refreshSettlements() {
+      try {
+        const latest = await api.groupSettlements(id);
+        if (active) setSettlements(Array.isArray(latest) ? latest : []);
+      } catch {
+        // Leave the last rendered state in place during transient network errors.
+      }
+    }
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible") refreshSettlements();
+    }
+    window.addEventListener("focus", refreshSettlements);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    const intervalId = window.setInterval(refreshSettlements, 30000);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshSettlements);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.clearInterval(intervalId);
+    };
+  }, [user, id]);
+
   async function loadAll() {
     try { await api.processRecurring(id); } catch (e) { showToast(e.message || "Could not process recurring expenses", "error"); }
     try {
