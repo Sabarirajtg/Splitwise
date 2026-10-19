@@ -240,6 +240,22 @@ export default function GroupDetail() {
           <button className={`tab ${tab === "settings" ? "active" : ""}`} onClick={() => setTab("settings")}>Settings</button>
         </div>
 
+        {group.members.some((member) => member.id === user.id && !member.upiId) && upiPromptDismissed && (
+          <p className="upi-later-prompt small muted">
+            Want to receive payments through UPI?{" "}
+            <button
+              className="linkbtn"
+              onClick={() => {
+                setUpiDraft("");
+                setUpiPromptDismissed(false);
+                setUpiEditorOpen(true);
+              }}
+            >
+              Set up UPI
+            </button>
+          </p>
+        )}
+
         {group.members.some((member) => member.id === user.id && !member.upiId) && !upiPromptDismissed && (
           <section className="upi-setup-card" aria-label="UPI setup">
             <div className="upi-setup-icon" aria-hidden="true">₹</div>
