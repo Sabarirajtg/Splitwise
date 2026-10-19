@@ -19,6 +19,7 @@ async function requestNext(path, options = {}) {
 
 export const api = {
   getUser: (id) => request(`/users/${id}`),
+  updateUpi: (id, upiId) => requestNext(`/api/users/${id}/upi`, { method: "PUT", body: JSON.stringify({ upiId }) }),
   currencies: () => request("/currencies"),
   fx: (base) => request(`/fx/${base}`),
 
@@ -61,6 +62,9 @@ export const api = {
 
   groupSettlements: (id) => request(`/groups/${id}/settlements`),
   recordSettlement: (groupId, payload) => request(`/groups/${groupId}/settlements`, { method: "POST", body: JSON.stringify(payload) }),
+  confirmSettlement: (groupId, settlementId, userId) => request(`/groups/${groupId}/settlements/${settlementId}/confirm`, { method: "POST", body: JSON.stringify({ userId }) }),
+  reportSettlementProblem: (groupId, settlementId, userId, note) => request(`/groups/${groupId}/settlements/${settlementId}/report-problem`, { method: "POST", body: JSON.stringify({ userId, note }) }),
+  pendingSettlements: (userId) => request(`/users/${userId}/pending-settlements`),
   balances: (groupId) => request(`/groups/${groupId}/balances`)
 };
 
