@@ -139,19 +139,35 @@ export default function Groups() {
             {pendingSettlements.length > 3 && <p className="small muted">And {pendingSettlements.length - 3} more payment update(s).</p>}
           </section>
         )}
-        {profile && !profile.upiId && !upiSetupDismissed && (
+        {profile && profile.upiId && !upiEditorOpen && (
+          <div className="upi-saved-row">
+            <span><strong>UPI ID</strong> · {profile.upiId}</span>
+            <button className="linkbtn" onClick={() => { setUpiDraft(profile.upiId); setUpiEditorOpen(true); }}>Edit</button>
+          </div>
+        )}
+
+        {profile && !profile.upiId && upiSetupDismissed && (
+          <p className="upi-later-prompt small muted">
+            Want to receive payments through UPI?{" "}
+            <button className="linkbtn" onClick={() => { setUpiSetupDismissed(false); setUpiEditorOpen(true); }}>
+              Set up UPI
+            </button>
+          </p>
+        )}
+
+        {profile && (upiEditorOpen || (!profile.upiId && !upiSetupDismissed)) && (
           <section className="upi-setup-card">
             <div className="upi-setup-icon" aria-hidden="true">₹</div>
             <div className="upi-setup-content">
-              <h3>Make receiving payments easier</h3>
-              <p className="small muted">Add your UPI ID once so group members can pay you more easily. You can skip this for now.</p>
+              <h3>{profile.upiId ? "Update your UPI ID" : "Make receiving payments easier"}</h3>
+              <p className="small muted">{profile.upiId ? "Update the UPI ID group members should use to pay you." : "Add your UPI ID once so group members can pay you more easily. You can skip this for now."}</p>
               {upiEditorOpen ? (
                 <>
                   <label htmlFor="splitshare-upi-id">Your UPI ID</label>
                   <input id="splitshare-upi-id" value={upiDraft} onChange={(event) => setUpiDraft(event.target.value)} placeholder="name@bank" autoComplete="off" />
                   <div className="upi-setup-actions">
                     <button className="btn-primary" onClick={saveUpi} disabled={savingUpi || !upiDraft.trim()}>{savingUpi ? "Saving…" : "Save UPI ID"}</button>
-                    <button className="linkbtn" onClick={dismissUpiSetup} disabled={savingUpi}>Not now</button>
+                    <button className="linkbtn" onClick={dismissUpiSetup} disabled={savingUpi}>{profile.upiId ? "Cancel" : "Not now"}</button>
                   </div>
                 </>
               ) : (

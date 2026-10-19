@@ -991,3 +991,22 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .needs-attention, .pending-payments, .upi-setup-card, .attention-count { animation: none !important; }
 }
+
+
+.upi-saved-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.upi-saved-row span { min-width: 0; overflow-wrap: anywhere; }
+.upi-saved-row strong { color: var(--text); }
+.upi-later-prompt { margin: 0 0 16px; line-height: 1.5; }
+.upi-later-prompt .linkbtn { display: inline; font-size: inherit; }
