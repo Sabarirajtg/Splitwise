@@ -1125,7 +1125,7 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
       const payload = { desc: desc.trim(), amount: Math.round(amt * 100) / 100, currency, paidBy, date, recurring: recurring || null, splitMethod, splits };
       if (editing) { await api.updateExpense(editing.id, payload); showToast("Expense updated successfully!"); }
       else { await api.addExpense(group.id, payload); showToast("Expense added successfully!"); }
-      await onSaved();
+      onSaved();
     } catch (e) {
       setError(e.message); showToast(e.message || "Could not save expense", "error");
     } finally { setBusyAction(null); }
@@ -1134,7 +1134,7 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
   async function del() {
     if (busy || !editing) return;
     setBusyAction("delete");
-    try { await api.deleteExpense(editing.id); showToast("Expense deleted successfully!"); await onDeleted(); }
+    try { await api.deleteExpense(editing.id); showToast("Expense deleted successfully!"); onDeleted(); }
     catch(e) { showToast(e.message || "Could not delete expense", "error"); }
     finally { setBusyAction(null); }
   }
