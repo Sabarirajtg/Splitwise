@@ -206,7 +206,7 @@ export default function Groups() {
         )}
         {groups === null && <div className="groups-loading" aria-label="Loading groups">{[0, 1, 2].map((item) => <div className="card skeleton-group-card" key={item}><div className="skeleton skeleton-line skeleton-group-title" /><div className="skeleton skeleton-line skeleton-group-meta" /><div className="skeleton skeleton-line skeleton-group-badge" /></div>)}</div>}
         {groups && groups.length === 0 && (
-          <div className="empty">No groups yet.<br />Create one or join with a group code.</div>
+          <div className="empty page-enter">No groups yet.<br />Create one or join with a group code.</div>
         )}
         {groups && groups.map(g => {
           const mine = Math.round((balances[g.id] || 0) * 100) / 100;
@@ -215,7 +215,7 @@ export default function Groups() {
           else if (mine > 0) pill = <span className="pill pill-teal">you're owed {money(mine, g.baseCurrency)}</span>;
           else pill = <span className="pill pill-coral">you owe {money(-mine, g.baseCurrency)}</span>;
           return (
-            <div key={g.id} className="card card-tap" onClick={() => router.push(`/groups/${g.id}`)}>
+            <div key={g.id} className="card card-tap page-enter" onClick={() => router.push(`/groups/${g.id}`)}>
               <div className="row">
                 <div>
                   <h3 style={{ fontSize: 15.5 }}>{g.name}</h3>
