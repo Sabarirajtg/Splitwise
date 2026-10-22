@@ -225,7 +225,7 @@ export default function GroupDetail() {
   const groupPendingSettlements = settlements.filter((settlement) => settlement.status !== "settled" && (settlement.from === user.id || settlement.to === user.id));
 
   return (
-    <div className="container">
+    <div className="container page-enter">
       <div className="topbar">
         <button className="btn-ghost" onClick={() => router.push("/groups")}>‹ Groups</button>
         <h1 style={{ fontSize: 16.5 }}>{group.name}</h1>
