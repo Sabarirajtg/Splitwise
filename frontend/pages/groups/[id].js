@@ -451,7 +451,7 @@ function PaymentSheet({ group, draft, onMarkPaid, onClose, loading, disabled }) 
         {canUseUpi ? <button className="btn-primary" onClick={openUpi}>Pay with UPI</button> : <p className="payment-hint">{draft.currency !== "INR" ? "UPI links are available for INR settlements. You can still pay another way." : "This person has not added a UPI ID yet. You can still pay them another way."}</p>}
         <LoadingButton className="btn-primary payment-mark-button" loading={loading} disabled={disabled} onClick={onMarkPaid}>{loading ? "Sending payment request…" : "I’ve paid — request confirmation"}</LoadingButton>
         <p className="small muted payment-footnote">This does not mark the debt as settled. The balance updates only after the recipient confirms receipt.</p>
-        <button className="linkbtn" onClick={onClose} style={{ display: "block", margin: "14px auto 0" }}>Cancel</button>
+        <button className="linkbtn" onClick={onClose} disabled={disabled} style={{ display: "block", margin: "14px auto 0" }}>Cancel</button>
       </div>
     </div>
   );
@@ -665,6 +665,7 @@ function GroupSettings({
         <button
           className="linkbtn"
           onClick={onCancel}
+          disabled={saving || savingSimplification}
           style={{ display: "block", margin: "14px auto 0" }}
         >
           Cancel
@@ -1031,6 +1032,7 @@ function InviteSheet({ group, user, invite, setInvite, onClose }) {
         <button
           className="linkbtn"
           onClick={onClose}
+          disabled={busy}
           style={{ display: "block", margin: "18px auto 0" }}
         >
           Close
