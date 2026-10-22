@@ -15,7 +15,7 @@ export default function LoadingButton({
       aria-busy={loading || undefined}
     >
       {loading && <span className="button-spinner" role="status" aria-label="Loading" />}
-      <span>{children}</span>
+      <span className="loading-button-label">{children}</span>
     </button>
   );
 }
