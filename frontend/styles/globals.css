@@ -1046,3 +1046,15 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .button-spinner { animation-duration: 1.4s; }
 }
+.loading-button-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: inherit;
+}
+.google-signin-button .loading-button-label {
+  gap: 10px;
+}
+.google-signin-button .loading-button-label svg {
+  flex: 0 0 20px;
+}
