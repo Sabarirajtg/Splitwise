@@ -62,15 +62,18 @@ export const api = {
 
 
   groupExpenses: (id) => request(`/groups/${id}/expenses`),
-  addExpense: (groupId, payload) => request(`/groups/${groupId}/expenses`, { method: "POST", body: JSON.stringify(payload) }),
-  updateExpense: (id, payload) => request(`/expenses/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
-  deleteExpense: (id) => request(`/expenses/${id}`, { method: "DELETE" }),
+  addExpense: (groupId, payload) => requestNext(`/api/groups/${groupId}/expenses`, { method: "POST", body: JSON.stringify(payload) }),
+  updateExpense: (id, payload) => requestNext(`/api/expenses/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  deleteExpense: (id) => requestNext(`/api/expenses/${id}`, { method: "DELETE", body: JSON.stringify({}) }),
   processRecurring: (groupId) => request(`/groups/${groupId}/recurring/process`, { method: "POST" }),
 
   groupSettlements: (id) => request(`/groups/${id}/settlements`),
-  recordSettlement: (groupId, payload) => request(`/groups/${groupId}/settlements`, { method: "POST", body: JSON.stringify(payload) }),
-  confirmSettlement: (groupId, settlementId, userId) => request(`/groups/${groupId}/settlements/${settlementId}/confirm`, { method: "POST", body: JSON.stringify({ userId }) }),
-  reportSettlementProblem: (groupId, settlementId, userId, note) => request(`/groups/${groupId}/settlements/${settlementId}/report-problem`, { method: "POST", body: JSON.stringify({ userId, note }) }),
+  recordSettlement: (groupId, payload) => requestNext(`/api/groups/${groupId}/settlements`, { method: "POST", body: JSON.stringify(payload) }),
+  confirmSettlement: (groupId, settlementId, userId) => requestNext(`/api/groups/${groupId}/settlements/${settlementId}/confirm`, { method: "POST", body: JSON.stringify({ userId }) }),
+  reportSettlementProblem: (groupId, settlementId, userId, note) => requestNext(`/api/groups/${groupId}/settlements/${settlementId}/report-problem`, { method: "POST", body: JSON.stringify({ userId, note }) }),
+  pushPublicKey: () => requestNext("/api/push/public-key"),
+  savePushSubscription: (subscription) => requestNext("/api/push/subscriptions", { method: "POST", body: JSON.stringify(subscription) }),
+  removePushSubscription: (endpoint) => requestNext("/api/push/subscriptions", { method: "DELETE", body: JSON.stringify({ endpoint }) }),
   pendingSettlements: (userId) => request(`/users/${userId}/pending-settlements`),
   balances: (groupId) => request(`/groups/${groupId}/balances`)
 };

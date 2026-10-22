@@ -1058,3 +1058,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .google-signin-button .loading-button-label svg {
   flex: 0 0 20px;
 }
+
+
+/* Web push settings card */
+.push-notification-card {
+  margin-bottom: 18px;
+}
+.push-notification-card .upi-setup-icon {
+  font-size: 18px;
+}
