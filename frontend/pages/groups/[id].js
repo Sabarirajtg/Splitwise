@@ -5,6 +5,7 @@ import { avatarColor } from "../../lib/colors";
 import CurrencySelect from "../../components/CurrencySelect";
 import { showToast } from "../../lib/toast";
 import { expenseIcon, summarizeExpenses } from "../../lib/expense";
+import LoadingButton from "../../components/LoadingButton";
 
 export default function GroupDetail() {
   const router = useRouter();
@@ -19,6 +20,8 @@ export default function GroupDetail() {
   const [editingExpense, setEditingExpense] = useState(null);
   const [settings, setSettings] = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [savingSimplification, setSavingSimplification] = useState(false);
+  const [settlementAction, setSettlementAction] = useState(null);
   const [invite, setInvite] = useState(null);
   const [settleDraft, setSettleDraft] = useState(null);
   const [upiEditorOpen, setUpiEditorOpen] = useState(false);
@@ -99,6 +102,8 @@ export default function GroupDetail() {
   }
 
   async function updateSimplification(enabled) {
+    if (savingSimplification) return;
+    setSavingSimplification(true);
     try {
       await api.updateSimplification(id, {
         userId: user.id,
@@ -108,6 +113,8 @@ export default function GroupDetail() {
       showToast("Simplification preference updated");
     } catch (error) {
       showToast(error.message || "Could not update preference", "error");
+    } finally {
+      setSavingSimplification(false);
     }
   }
 
@@ -117,7 +124,8 @@ export default function GroupDetail() {
   }
 
   async function markSettlementPaid() {
-    if (!settleDraft || !user) return;
+    if (!settleDraft || !user || settlementAction) return;
+    setSettlementAction("mark-paid");
     try {
       await api.recordSettlement(id, { ...settleDraft, userId: user.id });
       setSheet(null);
@@ -126,26 +134,36 @@ export default function GroupDetail() {
       showToast("Marked as paid. Waiting for the recipient to confirm.");
     } catch (error) {
       showToast(error.message || "Could not record payment", "error");
+    } finally {
+      setSettlementAction(null);
     }
   }
 
   async function confirmSettlement(settlementId) {
+    if (settlementAction) return;
+    setSettlementAction(`${settlementId}:confirm`);
     try {
       await api.confirmSettlement(id, settlementId, user.id);
       await loadAll();
       showToast("Payment confirmed and balance updated");
     } catch (error) {
       showToast(error.message || "Could not confirm payment", "error");
+    } finally {
+      setSettlementAction(null);
     }
   }
 
   async function reportSettlementProblem(settlementId) {
+    if (settlementAction) return;
+    setSettlementAction(`${settlementId}:report`);
     try {
       await api.reportSettlementProblem(id, settlementId, user.id, "Recipient has not received the payment");
       await loadAll();
       showToast("Issue reported to the payer");
     } catch (error) {
       showToast(error.message || "Could not report payment issue", "error");
+    } finally {
+      setSettlementAction(null);
     }
   }
 
@@ -273,9 +291,9 @@ export default function GroupDetail() {
                     autoComplete="off"
                   />
                   <div className="upi-setup-actions">
-                    <button className="btn-primary" onClick={saveUpiId} disabled={savingUpi || !upiDraft.trim()}>
+                    <LoadingButton className="btn-primary" onClick={saveUpiId} loading={savingUpi} disabled={!upiDraft.trim()}>
                       {savingUpi ? "Saving…" : "Save UPI ID"}
-                    </button>
+                    </LoadingButton>
                     <button className="linkbtn" onClick={() => setUpiEditorOpen(false)} disabled={savingUpi}>Cancel</button>
                   </div>
                 </>
@@ -290,7 +308,7 @@ export default function GroupDetail() {
         )}
 
         {groupPendingSettlements.length > 0 && (
-          <PendingSettlementPanel settlements={groupPendingSettlements} user={user} memberName={memberName} currency={group.baseCurrency} onConfirm={confirmSettlement} onReportProblem={reportSettlementProblem} />
+          <PendingSettlementPanel settlements={groupPendingSettlements} user={user} memberName={memberName} currency={group.baseCurrency} onConfirm={confirmSettlement} onReportProblem={reportSettlementProblem} loadingAction={settlementAction} />
         )}
 
         {tab === "overview" && <ExpensesOverview group={group} expenses={expenses} user={user} />}
@@ -341,6 +359,7 @@ export default function GroupDetail() {
             settings={settings}
             setSettings={setSettings}
             saving={savingSettings}
+            savingSimplification={savingSimplification}
             onSave={saveSettings}
             onSimplification={updateSimplification}
           />
@@ -353,7 +372,7 @@ export default function GroupDetail() {
 
       <button className="fab" onClick={() => { setEditingExpense(null); setSheet("expense"); }}>+</button>
 
-      {sheet === "settle" && settleDraft && <PaymentSheet group={group} draft={settleDraft} onMarkPaid={markSettlementPaid} onClose={() => { setSheet(null); setSettleDraft(null); }} />}
+      {sheet === "settle" && settleDraft && <PaymentSheet group={group} draft={settleDraft} onMarkPaid={markSettlementPaid} onClose={() => { setSheet(null); setSettleDraft(null); }} loading={settlementAction === "mark-paid"} disabled={Boolean(settlementAction)} />}
       {sheet === "invite" && <InviteSheet group={group} user={user} invite={invite} setInvite={setInvite} onClose={() => setSheet(null)} />}
       {sheet === "settings" && settings && (
         <div className="overlay">
@@ -371,6 +390,7 @@ export default function GroupDetail() {
               settings={settings}
               setSettings={setSettings}
               saving={savingSettings}
+              savingSimplification={savingSimplification}
               onSave={saveSettings}
               onSimplification={updateSimplification}
               onCancel={() => setSheet(null)}
@@ -390,7 +410,7 @@ export default function GroupDetail() {
   );
 }
 
-function PendingSettlementPanel({ settlements, user, memberName, currency, onConfirm, onReportProblem }) {
+function PendingSettlementPanel({ settlements, user, memberName, currency, onConfirm, onReportProblem, loadingAction }) {
   return (
     <section className="pending-payments" aria-label="Payments needing attention">
       <div className="pending-payments-heading"><span className="attention-count">{settlements.length}</span><div><h3>Payment updates</h3><p className="small muted">These payments are not settled yet.</p></div></div>
@@ -404,7 +424,7 @@ function PendingSettlementPanel({ settlements, user, memberName, currency, onCon
               <p className="small">{isProblem ? (isRecipient ? "You reported a problem with this payment." : memberName(settlement.to) + " reported a problem with this payment.") : (isRecipient ? memberName(settlement.from) + " marked this as paid." : "Waiting for " + memberName(settlement.to) + " to confirm.")}</p>
               {isProblem && settlement.issueNote && <p className="small muted">{settlement.issueNote}</p>}
             </div>
-            {isRecipient && <div className="pending-payment-actions"><button className="btn-primary pending-confirm-button" onClick={() => onConfirm(settlement.id)}>Received</button>{!isProblem && <button className="pending-problem-button" onClick={() => onReportProblem(settlement.id)}>Not received</button>}</div>}
+            {isRecipient && <div className="pending-payment-actions"><LoadingButton className="btn-primary pending-confirm-button" loading={loadingAction === `${settlement.id}:confirm`} disabled={Boolean(loadingAction)} onClick={() => onConfirm(settlement.id)}>Received</LoadingButton>{!isProblem && <LoadingButton className="pending-problem-button" loading={loadingAction === `${settlement.id}:report`} disabled={Boolean(loadingAction)} onClick={() => onReportProblem(settlement.id)}>Not received</LoadingButton>}</div>}
           </div>
         );
       })}
@@ -412,7 +432,7 @@ function PendingSettlementPanel({ settlements, user, memberName, currency, onCon
   );
 }
 
-function PaymentSheet({ group, draft, onMarkPaid, onClose }) {
+function PaymentSheet({ group, draft, onMarkPaid, onClose, loading, disabled }) {
   const recipient = group.members.find((member) => member.id === draft.to);
   const canUseUpi = draft.currency === "INR" && Boolean(recipient && recipient.upiId);
   function openUpi() {
@@ -429,7 +449,7 @@ function PaymentSheet({ group, draft, onMarkPaid, onClose }) {
         <p className="muted small">Once you have made the transfer, mark it as paid. The recipient can confirm when they are next in SplitShare.</p>
         <div className="payment-amount-card"><span className="small muted">Amount to pay</span><strong>{money(draft.amount, draft.currency)}</strong>{canUseUpi && <span className="small muted">UPI ID · {recipient.upiId}</span>}</div>
         {canUseUpi ? <button className="btn-primary" onClick={openUpi}>Pay with UPI</button> : <p className="payment-hint">{draft.currency !== "INR" ? "UPI links are available for INR settlements. You can still pay another way." : "This person has not added a UPI ID yet. You can still pay them another way."}</p>}
-        <button className="btn-primary payment-mark-button" onClick={onMarkPaid}>I’ve paid — request confirmation</button>
+        <LoadingButton className="btn-primary payment-mark-button" loading={loading} disabled={disabled} onClick={onMarkPaid}>{loading ? "Sending payment request…" : "I’ve paid — request confirmation"}</LoadingButton>
         <p className="small muted payment-footnote">This does not mark the debt as settled. The balance updates only after the recipient confirms receipt.</p>
         <button className="linkbtn" onClick={onClose} style={{ display: "block", margin: "14px auto 0" }}>Cancel</button>
       </div>
@@ -583,6 +603,7 @@ function GroupSettings({
   settings,
   setSettings,
   saving,
+  savingSimplification,
   onSave,
   onSimplification,
   onCancel,
@@ -629,14 +650,15 @@ function GroupSettings({
       </p>
 
       {hasChanges && (
-        <button
+        <LoadingButton
           className="btn-primary"
+          loading={saving}
           disabled={saving}
           onClick={onSave}
           style={{ marginTop: 10 }}
         >
-          {saving ? "Saving…" : "Save Changes"}
-        </button>
+          {saving ? "Saving changes…" : "Save Changes"}
+        </LoadingButton>
       )}
 
       {onCancel && (
@@ -664,10 +686,12 @@ function GroupSettings({
         <input
           type="checkbox"
           checked={!optedOut}
+          disabled={savingSimplification}
           onChange={(event) => onSimplification(event.target.checked)}
           style={{ width: "auto" }}
         />
         Participate in suggested simplification
+        {savingSimplification && <span className="button-spinner" role="status" aria-label="Saving preference" />}
       </label>
 
       <div style={{ marginTop: 12 }}>
@@ -828,7 +852,8 @@ function ActivityTab({ expenses, settlements, memberName }) {
 
 function InviteSheet({ group, user, invite, setInvite, onClose }) {
   const [copied, setCopied] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState(null);
+  const busy = Boolean(busyAction);
   const [expiresAt, setExpiresAt] = useState("");
   const [revoked, setRevoked] = useState(false);
 
@@ -858,7 +883,7 @@ function InviteSheet({ group, user, invite, setInvite, onClose }) {
   }
 
   async function copyLink() {
-    setBusy(true);
+    setBusyAction("copy");
 
     try {
       const link = await getShareableLink();
@@ -868,12 +893,12 @@ function InviteSheet({ group, user, invite, setInvite, onClose }) {
     } catch (error) {
       showToast(error.message || "Could not copy invite link", "error");
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   }
 
   async function shareLink() {
-    setBusy(true);
+    setBusyAction("share");
 
     try {
       const url = await getShareableLink();
@@ -894,12 +919,12 @@ function InviteSheet({ group, user, invite, setInvite, onClose }) {
         showToast(error.message || "Could not share invite link", "error");
       }
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   }
 
   async function regenerateLink() {
-    setBusy(true);
+    setBusyAction("regenerate");
 
     try {
       await ensureInvite();
@@ -908,12 +933,12 @@ function InviteSheet({ group, user, invite, setInvite, onClose }) {
     } catch (error) {
       showToast(error.message || "Could not regenerate link", "error");
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   }
 
   async function revokeLink() {
-    setBusy(true);
+    setBusyAction("revoke");
 
     try {
       await api.revokeInvite(group.id, { userId: user.id });
@@ -924,7 +949,7 @@ function InviteSheet({ group, user, invite, setInvite, onClose }) {
     } catch (error) {
       showToast(error.message || "Could not revoke link", "error");
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   }
 
@@ -967,42 +992,42 @@ function InviteSheet({ group, user, invite, setInvite, onClose }) {
           </p>
         )}
 
-        <button
+        <LoadingButton
           className="btn-primary"
           style={{ marginTop: 10 }}
+          loading={busyAction === "copy"}
           disabled={busy}
           onClick={copyLink}
         >
-          {busy
-            ? "Preparing…"
-            : copied
-              ? "Copy invite link again"
-              : "Copy invite link"}
-        </button>
-        <button
+          {busyAction === "copy" ? "Preparing invite link…" : copied ? "Copy invite link again" : "Copy invite link"}
+        </LoadingButton>
+        <LoadingButton
           className="invite-secondary-button"
           style={{ width: "100%", marginTop: 8 }}
+          loading={busyAction === "share"}
           disabled={busy}
           onClick={shareLink}
         >
-          Share link…
-        </button>
-        <button
+          {busyAction === "share" ? "Sharing…" : "Share link…"}
+        </LoadingButton>
+        <LoadingButton
           className="invite-secondary-button"
           style={{ width: "100%", marginTop: 8 }}
+          loading={busyAction === "regenerate"}
           disabled={busy}
           onClick={regenerateLink}
         >
-          Regenerate link
-        </button>
-        <button
+          {busyAction === "regenerate" ? "Regenerating…" : "Regenerate link"}
+        </LoadingButton>
+        <LoadingButton
           className="btn-danger-text"
           style={{ width: "100%", marginTop: 8 }}
+          loading={busyAction === "revoke"}
           disabled={busy || !currentToken}
           onClick={revokeLink}
         >
-          Revoke link
-        </button>
+          {busyAction === "revoke" ? "Revoking…" : "Revoke link"}
+        </LoadingButton>
         <button
           className="linkbtn"
           onClick={onClose}
@@ -1031,7 +1056,8 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
     return v;
   });
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState(null);
+  const busy = Boolean(busyAction);
   const [fxPreview, setFxPreview] = useState(null);
 
   useEffect(() => {
@@ -1083,6 +1109,7 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
   }
 
   async function save() {
+    if (busy) return;
     setError("");
     if (!desc.trim()) { setError("Enter a description"); return; }
     const amt = parseFloat(amount);
@@ -1091,22 +1118,23 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
     let splits;
     try { splits = computeSplits(); } catch (e) { setError(e.message); return; }
 
-    setBusy(true);
+    setBusyAction("save");
     try {
       const payload = { desc: desc.trim(), amount: Math.round(amt * 100) / 100, currency, paidBy, date, recurring: recurring || null, splitMethod, splits };
       if (editing) { await api.updateExpense(editing.id, payload); showToast("Expense updated successfully!"); }
       else { await api.addExpense(group.id, payload); showToast("Expense added successfully!"); }
-      onSaved();
+      await onSaved();
     } catch (e) {
       setError(e.message); showToast(e.message || "Could not save expense", "error");
-    } finally { setBusy(false); }
+    } finally { setBusyAction(null); }
   }
 
   async function del() {
-    setBusy(true);
-    try { await api.deleteExpense(editing.id); showToast("Expense deleted successfully!"); onDeleted(); }
+    if (busy || !editing) return;
+    setBusyAction("delete");
+    try { await api.deleteExpense(editing.id); showToast("Expense deleted successfully!"); await onDeleted(); }
     catch(e) { showToast(e.message || "Could not delete expense", "error"); }
-    finally { setBusy(false); }
+    finally { setBusyAction(null); }
   }
 
   const amt = parseFloat(amount) || 0;
@@ -1191,15 +1219,15 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
           })}
         </div>
         {error && <div className="error">{error}</div>}
-        <button className="btn-primary" onClick={save} disabled={busy} style={{ marginTop: 8 }}>
-          {editing ? "Save changes" : "Add expense"}
-        </button>
+        <LoadingButton className="btn-primary" onClick={save} loading={busyAction === "save"} disabled={busy} style={{ marginTop: 8 }}>
+          {busyAction === "save" ? (editing ? "Saving changes…" : "Adding expense…") : (editing ? "Save changes" : "Add expense")}
+        </LoadingButton>
         {editing && (
-          <button className="btn-danger-text" onClick={del} disabled={busy} style={{ width: "100%", marginTop: 10, background: "transparent", border: "none" }}>
-            Delete expense
-          </button>
+          <LoadingButton className="btn-danger-text" onClick={del} loading={busyAction === "delete"} disabled={busy} style={{ width: "100%", marginTop: 10, background: "transparent", border: "none" }}>
+            {busyAction === "delete" ? "Deleting expense…" : "Delete expense"}
+          </LoadingButton>
         )}
-        <button className="linkbtn" onClick={onClose} style={{ display: "block", margin: "16px auto 0" }}>Cancel</button>
+        <button className="linkbtn" onClick={onClose} disabled={busy} style={{ display: "block", margin: "16px auto 0" }}>Cancel</button>
       </div>
     </div>
   );
