@@ -4,6 +4,7 @@ import { api, getSession, clearSession, money, CURRENCIES } from "../../lib/api"
 import { signOut } from "next-auth/react";
 import CurrencySelect from "../../components/CurrencySelect";
 import { showToast } from "../../lib/toast";
+import LoadingButton from "../../components/LoadingButton";
 
 export default function Groups() {
   const router = useRouter();
@@ -16,7 +17,9 @@ export default function Groups() {
   const [newSpendingCurrency, setNewSpendingCurrency] = useState("INR");
   const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState({});
-  const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState(null);
+  const busy = Boolean(busyAction);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [pendingSettlements, setPendingSettlements] = useState([]);
   const [profile, setProfile] = useState(null);
   const [upiDraft, setUpiDraft] = useState("");
@@ -92,6 +95,7 @@ export default function Groups() {
   }
 
   async function saveUpi() {
+    if (savingUpi || !user || !upiDraft.trim()) return;
     setSavingUpi(true);
     try {
       const updated = await api.updateUpi(user.id, upiDraft.trim());
@@ -109,7 +113,8 @@ export default function Groups() {
   async function createGroup() {
     setError({});
     if (!newName.trim()) { setError({ group: "Enter a group name" }); return; }
-    setBusy(true);
+    if (busy) return;
+    setBusyAction("create");
     try {
       const g = await api.createGroup(newName, newCurrency, user.id, newSpendingCurrency);
       setSheet(null); setNewName("");
@@ -117,32 +122,42 @@ export default function Groups() {
       router.push(`/groups/${g.id}`);
     } catch (e) {
       setError({ group: e.message }); showToast(e.message || "Could not create group", "error");
-    } finally { setBusy(false); }
+    } finally { setBusyAction(null); }
   }
 
   async function joinGroup() {
     setError({});
     if (!joinCode.trim()) { setError({ join: "Enter a group code" }); return; }
-    setBusy(true);
+    if (busy) return;
+    setBusyAction("join");
     try {
       const g = await api.joinGroup(joinCode.trim(), user.id);
       setSheet(null); setJoinCode("");
       router.push(`/groups/${g.id}`);
     } catch (e) {
       setError({ join: e.message }); showToast(e.message || "Could not join group", "error");
-    } finally { setBusy(false); }
+    } finally { setBusyAction(null); }
   }
 
-  function logout() {
-    clearSession();
-    signOut({ redirect: false }).then(() => router.push("/login"));
+  async function logout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      clearSession();
+      await signOut({ redirect: false });
+      await router.push("/login");
+    } catch (error) {
+      showToast(error.message || "Could not log out", "error");
+    } finally {
+      setLoggingOut(false);
+    }
   }
 
   return (
     <div className="container">
       <div className="topbar">
         <h1><span className="brand-gradient-text">Your groups</span></h1>
-        <button className="btn-ghost" onClick={logout}>Log out</button>
+        <LoadingButton className="btn-ghost" onClick={logout} loading={loggingOut} disabled={loggingOut}>{loggingOut ? "Logging out…" : "Log out"}</LoadingButton>
       </div>
       <div className="screen">
         {pendingSettlements.length > 0 && (
@@ -194,7 +209,7 @@ export default function Groups() {
                   <label htmlFor="splitshare-upi-id">Your UPI ID</label>
                   <input id="splitshare-upi-id" value={upiDraft} onChange={(event) => setUpiDraft(event.target.value)} placeholder="name@bank" autoComplete="off" />
                   <div className="upi-setup-actions">
-                    <button className="btn-primary" onClick={saveUpi} disabled={savingUpi || !upiDraft.trim()}>{savingUpi ? "Saving…" : "Save UPI ID"}</button>
+                    <LoadingButton className="btn-primary" onClick={saveUpi} loading={savingUpi} disabled={!upiDraft.trim()}>{savingUpi ? "Saving…" : "Save UPI ID"}</LoadingButton>
                     <button className="linkbtn" onClick={dismissUpiSetup} disabled={savingUpi}>{profile.upiId ? "Cancel" : "Not now"}</button>
                   </div>
                 </>
@@ -242,14 +257,14 @@ export default function Groups() {
             <div className="field"><CurrencySelect label="Base currency · group totals" value={newCurrency} onChange={setNewCurrency} /></div>
             <div className="field"><CurrencySelect label="Spending currency · default expenses" value={newSpendingCurrency} onChange={setNewSpendingCurrency} /></div>
             {error.group && <div className="error">{error.group}</div>}
-            <button className="btn-primary" onClick={createGroup} disabled={busy}>Create group</button>
+            <LoadingButton className="btn-primary" onClick={createGroup} loading={busyAction === "create"} disabled={busy}>{busyAction === "create" ? "Creating group…" : "Create group"}</LoadingButton>
             <div style={{ textAlign: "center", margin: "18px 0 10px", color: "var(--text-3)", fontSize: 12.5 }}>or</div>
             <div className="field">
               <label>Join with group code</label>
               <input value={joinCode} onChange={e => setJoinCode(e.target.value)} placeholder="Paste group code" />
             </div>
             {error.join && <div className="error">{error.join}</div>}
-            <button onClick={joinGroup} disabled={busy} style={{ width: "100%" }}>Join group</button>
+            <LoadingButton onClick={joinGroup} loading={busyAction === "join"} disabled={busy} style={{ width: "100%" }}>{busyAction === "join" ? "Joining group…" : "Join group"}</LoadingButton>
             <button className="linkbtn" onClick={() => setSheet(null)} style={{ display: "block", margin: "18px auto 0" }}>Cancel</button>
           </div>
         </div>
