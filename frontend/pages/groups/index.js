@@ -265,7 +265,7 @@ export default function Groups() {
             </div>
             {error.join && <div className="error">{error.join}</div>}
             <LoadingButton onClick={joinGroup} loading={busyAction === "join"} disabled={busy} style={{ width: "100%" }}>{busyAction === "join" ? "Joining group…" : "Join group"}</LoadingButton>
-            <button className="linkbtn" onClick={() => setSheet(null)} style={{ display: "block", margin: "18px auto 0" }}>Cancel</button>
+            <button className="linkbtn" onClick={() => setSheet(null)} disabled={busy} style={{ display: "block", margin: "18px auto 0" }}>Cancel</button>
           </div>
         </div>
       )}
