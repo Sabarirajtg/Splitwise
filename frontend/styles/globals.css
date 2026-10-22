@@ -1018,3 +1018,43 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .upi-saved-row strong { color: var(--text); }
 .upi-later-prompt { margin: 0 0 16px; line-height: 1.5; }
 .upi-later-prompt .linkbtn { display: inline; font-size: inherit; }
+
+/* Consistent API-action loading feedback */
+.loading-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+}
+.loading-button:disabled {
+  cursor: wait;
+}
+.button-spinner {
+  display: inline-block;
+  flex: 0 0 1em;
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: middle;
+  animation: button-spinner-rotate .7s linear infinite;
+}
+@keyframes button-spinner-rotate {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .button-spinner { animation-duration: 1.4s; }
+}
+.loading-button-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: inherit;
+}
+.google-signin-button .loading-button-label {
+  gap: 10px;
+}
+.google-signin-button .loading-button-label svg {
+  flex: 0 0 20px;
+}

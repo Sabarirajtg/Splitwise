@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { useSession, signIn } from "next-auth/react";
 import { setSession } from "../lib/api";
+import LoadingButton from "../components/LoadingButton";
 
 function GoogleIcon() {
   return (
@@ -18,6 +19,19 @@ export default function Login() {
   const router = useRouter();
   const { data: googleSession, status } = useSession();
   const [error, setError] = useState("");
+  const [signingIn, setSigningIn] = useState(false);
+
+  async function startGoogleSignIn() {
+    if (signingIn || status === "loading") return;
+    setError("");
+    setSigningIn(true);
+    try {
+      await signIn("google");
+    } catch (signInError) {
+      setError(signInError.message || "Could not start Google sign-in");
+      setSigningIn(false);
+    }
+  }
 
   // Bridge: once NextAuth confirms a Google sign-in and our backend has
   // synced/created the matching app user, drop it into the same localStorage
@@ -26,6 +40,7 @@ export default function Login() {
     if (status !== "authenticated" || !googleSession) return;
     if (googleSession.appError) {
       setError(googleSession.appError);
+      setSigningIn(false);
       return;
     }
     if (googleSession.appUserId) {
@@ -44,14 +59,15 @@ export default function Login() {
       <p className="muted" style={{ marginBottom: 10 }}>Split expenses with your group, in any currency</p>
       <p style={{ marginBottom: 40 }} className="brand-gradient-text muted">by Sabsh ❤️</p>
       <div className="screen" style={{ textAlign: "left", paddingTop: 0 }}>
-        <button
-          onClick={() => { setError(""); signIn("google"); }}
+        <LoadingButton
+          onClick={startGoogleSignIn}
+          loading={signingIn || status === "loading"}
           disabled={status === "loading"}
           className="google-signin-button"
         >
           <GoogleIcon />
-          {status === "loading" ? "Please wait…" : "Continue with Google"}
-        </button>
+          {signingIn || status === "loading" ? "Opening Google sign-in…" : "Continue with Google"}
+        </LoadingButton>
         {error && <div className="error" style={{ textAlign: "center", marginTop: 14 }}>{error}</div>}
         <p className="small muted" style={{ marginTop: 22, textAlign: "center" }}>
           We use your Google account to keep your identity unique across every group —

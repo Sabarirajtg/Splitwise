@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { api, getSession } from "../../lib/api";
 import { showToast } from "../../lib/toast";
+import LoadingButton from "../../components/LoadingButton";
 
 export default function InviteLanding() {
   const router = useRouter();
@@ -102,13 +103,14 @@ export default function InviteLanding() {
                   Open group
                 </button>
               ) : (
-                <button
+                <LoadingButton
                   className="btn-primary"
                   onClick={joinGroup}
+                  loading={joining}
                   disabled={joining}
                 >
-                  {joining ? "Joining…" : "Join group"}
-                </button>
+                  {joining ? "Joining group…" : "Join group"}
+                </LoadingButton>
               )}
             </>
           )}
