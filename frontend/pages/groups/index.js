@@ -5,6 +5,7 @@ import { signOut } from "next-auth/react";
 import CurrencySelect from "../../components/CurrencySelect";
 import { showToast } from "../../lib/toast";
 import LoadingButton from "../../components/LoadingButton";
+import PushNotificationSetup from "../../components/PushNotificationSetup";
 
 export default function Groups() {
   const router = useRouter();
@@ -182,6 +183,8 @@ export default function Groups() {
             {pendingSettlements.length > 3 && <p className="small muted">And {pendingSettlements.length - 3} more payment update(s).</p>}
           </section>
         )}
+        {user && <PushNotificationSetup userId={user.id} />}
+
         {profile && profile.upiId && !upiEditorOpen && (
           <div className="upi-saved-row">
             <span><strong>UPI ID</strong> · {profile.upiId}</span>

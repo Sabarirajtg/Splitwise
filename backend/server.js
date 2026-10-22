@@ -3,9 +3,10 @@ const express = require("express");
 const cors = require("cors");
 const { nanoid } = require("nanoid");
 const connectDB = require("./db");
-const { User, Group, Expense, Settlement } = require("./models");
+const { User, Group, Expense, Settlement, PushSubscription } = require("./models");
 const { convert, getRates, convertWithSnapshot } = require("./fx");
 const { simplifyDebts, expenseSummary } = require("./calculations");
+const { getVapidPublicKey, isPushConfigured, sendWebPush } = require("./webPush");
 
 const app = express();
 app.use(cors());
@@ -74,6 +75,71 @@ app.put("/api/users/:id/upi", async (req, res) => {
   user.upiId = normalized || null;
   await user.save();
   res.json({ id: user._id, upiId: user.upiId || null });
+});
+
+// ---------- Web push subscriptions ----------
+app.get("/api/push/public-key", (req, res) => {
+  try {
+    const publicKey = getVapidPublicKey();
+    res.json({ publicKey: publicKey || null, configured: Boolean(publicKey) });
+  } catch (error) {
+    console.error("Invalid VAPID configuration:", error.message);
+    res.status(500).json({ error: "Push notifications are misconfigured" });
+  }
+});
+
+app.post("/api/push/subscriptions", async (req, res) => {
+  if (!requireInternal(req, res)) return;
+  try {
+    const { userId, endpoint, keys, expirationTime } = req.body || {};
+    if (!userId || !await User.exists({ _id: userId })) {
+      return res.status(401).json({ error: "Sign in to enable push notifications" });
+    }
+    if (!isAllowedPushEndpoint(endpoint)) {
+      return res.status(400).json({ error: "Unsupported push subscription endpoint" });
+    }
+    if (!keys || typeof keys.p256dh !== "string" || typeof keys.auth !== "string" ||
+        keys.p256dh.length > 256 || keys.auth.length > 128) {
+      return res.status(400).json({ error: "Invalid push subscription keys" });
+    }
+    if (!isPushConfigured()) {
+      return res.status(503).json({ error: "Push notifications are not configured on the server" });
+    }
+
+    let parsedExpiration = null;
+    if (expirationTime != null) {
+      const timestamp = Number(expirationTime);
+      if (!Number.isFinite(timestamp) || timestamp <= 0) {
+        return res.status(400).json({ error: "Invalid subscription expiration time" });
+      }
+      parsedExpiration = new Date(timestamp);
+    }
+
+    const subscriptionId = require("crypto").createHash("sha256").update(endpoint).digest("hex");
+    await PushSubscription.findOneAndUpdate(
+      { endpoint },
+      {
+        $set: { userId, keys: { p256dh: keys.p256dh, auth: keys.auth }, expirationTime: parsedExpiration },
+        $setOnInsert: { _id: subscriptionId }
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true }
+    );
+    res.status(201).json({ ok: true });
+  } catch (error) {
+    console.error("Could not save push subscription:", error.message);
+    res.status(500).json({ error: "Could not save push subscription" });
+  }
+});
+
+app.delete("/api/push/subscriptions", async (req, res) => {
+  if (!requireInternal(req, res)) return;
+  const { userId, endpoint } = req.body || {};
+  if (!userId) return res.status(401).json({ error: "Sign in to manage push notifications" });
+  if (typeof endpoint !== "string" || endpoint.length > 2048) {
+    return res.status(400).json({ error: "Invalid subscription endpoint" });
+  }
+  await PushSubscription.deleteOne({ userId, endpoint });
+  res.json({ ok: true });
 });
 
 // ---------- Currencies / FX ----------
@@ -171,6 +237,137 @@ function requireInternal(req, res) {
 function isGroupMember(group, userId) {
   return Boolean(userId && group.memberIds.includes(userId));
 }
+
+function isAllowedPushEndpoint(endpoint) {
+  if (typeof endpoint !== "string" || endpoint.length > 2048) return false;
+  try {
+    const url = new URL(endpoint);
+    if (url.protocol !== "https:" || url.username || url.password || url.port) return false;
+    const host = url.hostname.toLowerCase();
+    return host === "fcm.googleapis.com" ||
+      host === "web.push.apple.com" ||
+      host.endsWith(".push.apple.com") ||
+      host === "push.services.mozilla.com" ||
+      host.endsWith(".push.services.mozilla.com") ||
+      host.endsWith(".notify.windows.com");
+  } catch {
+    return false;
+  }
+}
+
+function formatPushAmount(amount, currency) {
+  const symbols = { INR: "₹", USD: "$", EUR: "€", GBP: "£", THB: "฿", JPY: "¥", AUD: "A$", CAD: "C$", SGD: "S$", AED: "د.إ" };
+  const rounded = Math.round((Number(amount) + Number.EPSILON) * 100) / 100;
+  return (symbols[currency] || (currency + " ")) + rounded.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
+function shortPushText(value, maxLength) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length > maxLength ? text.slice(0, maxLength - 1) + "…" : text;
+}
+
+async function sendPushToUser(userId, payload) {
+  if (!isPushConfigured()) return;
+  const subscriptions = await PushSubscription.find({ userId }).lean();
+  await Promise.all(subscriptions.map(async (subscription) => {
+    try {
+      await sendWebPush({
+        endpoint: subscription.endpoint,
+        keys: subscription.keys
+      }, {
+        ...payload,
+        tag: payload.tag ? payload.tag + "-" + subscription._id : undefined
+      });
+    } catch (error) {
+      if (error.statusCode === 404 || error.statusCode === 410) {
+        await PushSubscription.deleteOne({ _id: subscription._id });
+      } else {
+        console.error("Push notification delivery failed:", error.statusCode || error.message);
+      }
+    }
+  }));
+}
+
+async function notifyPushUsers(userIds, actorId, makePayload) {
+  if (!isPushConfigured()) return;
+  const recipients = [...new Set((userIds || []).filter((id) => id && id !== actorId))];
+  await Promise.all(recipients.map(async (recipientId) => {
+    try {
+      await sendPushToUser(recipientId, makePayload(recipientId));
+    } catch (error) {
+      console.error("Could not deliver push notification:", error.message);
+    }
+  }));
+}
+
+function expenseInvolvedIds(expense) {
+  return [...new Set([expense.paidBy, ...(expense.splits || []).map((split) => split.userId)].filter(Boolean))];
+}
+
+async function notifyExpenseChange(group, expense, actorId, verb, previousInvolvedIds) {
+  const actor = await User.findById(actorId).select("name").lean();
+  const actorName = (actor && actor.name) || "A group member";
+  const recipients = [...new Set([...(previousInvolvedIds || []), ...expenseInvolvedIds(expense)])]
+    .filter((id) => group.memberIds.includes(id));
+  await notifyPushUsers(recipients, actorId, (recipientId) => {
+    const split = (expense.splits || []).find((item) => item.userId === recipientId);
+    let shareText = "";
+    if (verb === "added") {
+      shareText = split
+        ? " Your share: " + formatPushAmount(split.amount, expense.currency) + "."
+        : expense.paidBy === recipientId ? " You paid for this expense." : "";
+    } else if (split) {
+      shareText = " Your current share: " + formatPushAmount(split.amount, expense.currency) + ".";
+    } else if (previousInvolvedIds && previousInvolvedIds.includes(recipientId)) {
+      shareText = " You're no longer included in this expense.";
+    }
+    return {
+      title: verb === "added" ? "New group expense" : "Expense updated",
+      body: actorName + " " + verb + " \"" + shortPushText(expense.desc, 60) + "\" in " + shortPushText(group.name, 55) + "." + shareText,
+      url: "/groups/" + encodeURIComponent(group._id),
+      tag: "expense-" + expense._id + "-" + verb
+    };
+  });
+}
+
+async function notifyExpenseDeleted(group, expense, actorId) {
+  const actor = await User.findById(actorId).select("name").lean();
+  const actorName = (actor && actor.name) || "A group member";
+  await notifyPushUsers(expenseInvolvedIds(expense), actorId, () => ({
+    title: "Expense removed",
+    body: actorName + " removed \"" + shortPushText(expense.desc, 65) + "\" from " + shortPushText(group.name, 55) + ".",
+    url: "/groups/" + encodeURIComponent(group._id),
+    tag: "expense-" + expense._id + "-deleted"
+  }));
+}
+
+async function notifySettlement(group, settlement, recipientId, actorId, kind) {
+  const actor = await User.findById(actorId).select("name").lean();
+  const actorName = (actor && actor.name) || "A group member";
+  const amount = formatPushAmount(settlement.amount, settlement.currency);
+  let title = "Payment update";
+  let body = "";
+  if (kind === "paid") {
+    title = "Payment marked as paid";
+    body = actorName + " marked " + amount + " as paid to you in " + shortPushText(group.name, 55) + ". Please confirm receipt.";
+  } else if (kind === "confirmed") {
+    title = "Payment confirmed";
+    body = actorName + " confirmed your " + amount + " payment in " + shortPushText(group.name, 55) + ".";
+  } else {
+    title = "Payment needs attention";
+    body = actorName + " reported they have not received your " + amount + " payment in " + shortPushText(group.name, 55) + ".";
+  }
+  await notifyPushUsers([recipientId], actorId, () => ({
+    title,
+    body,
+    url: "/groups/" + encodeURIComponent(group._id),
+    tag: "settlement-" + settlement._id + "-" + kind
+  }));
+}
+
 
 function isValidInvitation(group) {
   return Boolean(
@@ -434,28 +631,35 @@ app.get("/api/groups/:id/expenses", async (req, res) => {
 function mapExpense(e) {
   return {
     id: e._id, groupId: e.groupId, desc: e.desc, amount: e.amount, currency: e.currency,
-    amountInBase: e.amountInBase, fxRate: e.fxRate, paidBy: e.paidBy, splits: e.splits, date: e.date,
+    amountInBase: e.amountInBase, fxRate: e.fxRate, paidBy: e.paidBy, splits: e.splits, createdBy: e.createdBy || null, date: e.date,
     recurring: e.recurring, splitMethod: e.splitMethod, lastGenerated: e.lastGenerated
   };
 }
 
 app.post("/api/groups/:id/expenses", async (req, res) => {
+  if (!requireInternal(req, res)) return;
   try {
     const group = await Group.findById(req.params.id);
     if (!group) return res.status(404).json({ error: "Group not found" });
-    const { desc, amount, currency, paidBy, date, recurring, splitMethod, splits } = req.body;
-    if (!desc || !desc.trim()) return res.status(400).json({ error: "Enter a description" });
-    if (!amount || amount <= 0) return res.status(400).json({ error: "Enter a valid amount" });
-    if (!splits || splits.length === 0) return res.status(400).json({ error: "Select at least one person to split with" });
+    const { userId, desc, amount, currency, paidBy, date, recurring, splitMethod, splits } = req.body || {};
+    if (!isGroupMember(group, userId)) return res.status(403).json({ error: "Only group members can add expenses" });
+    if (typeof desc !== "string" || !desc.trim()) return res.status(400).json({ error: "Enter a description" });
+    if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) return res.status(400).json({ error: "Enter a valid amount" });
+    if (!CURRENCIES.includes(currency) || !isGroupMember(group, paidBy)) return res.status(400).json({ error: "Select a valid currency and payer" });
+    if (!Array.isArray(splits) || splits.length === 0 ||
+        splits.some((split) => !split || !isGroupMember(group, split.userId) ||
+          !Number.isFinite(Number(split.amount)) || Number(split.amount) < 0)) {
+      return res.status(400).json({ error: "Select valid people and amounts for the split" });
+    }
 
-    const amountInBase = await convert(amount, currency, group.baseCurrency);
-
+    const amountInBase = await convert(Number(amount), currency, group.baseCurrency);
     const expense = await Expense.create({
-      _id: nanoid(10), groupId: group._id, desc: desc.trim(), amount, currency, amountInBase,
-      paidBy, date: date || new Date().toISOString().slice(0, 10), recurring: recurring || null,
+      _id: nanoid(10), groupId: group._id, desc: desc.trim(), amount: Number(amount), currency, amountInBase,
+      paidBy, createdBy: userId, date: date || new Date().toISOString().slice(0, 10), recurring: recurring || null,
       splitMethod, splits, lastGenerated: date
     });
-    res.json(mapExpense(expense));
+    await notifyExpenseChange(group, expense, userId, "added").catch((error) => console.error("Expense notification failed:", error.message));
+    res.status(201).json(mapExpense(expense));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message || "Server error" });
@@ -463,17 +667,27 @@ app.post("/api/groups/:id/expenses", async (req, res) => {
 });
 
 app.put("/api/expenses/:id", async (req, res) => {
+  if (!requireInternal(req, res)) return;
   try {
     const expense = await Expense.findById(req.params.id);
     if (!expense) return res.status(404).json({ error: "Not found" });
     const group = await Group.findById(expense.groupId);
-    const { desc, amount, currency, paidBy, date, recurring, splitMethod, splits } = req.body;
-    if (!CURRENCIES.includes(currency)||!group.memberIds.includes(paidBy)) return res.status(400).json({error:"Invalid currency or payer"});
-    if (!Array.isArray(splits)||!splits.length||splits.some(x=>!group.memberIds.includes(x.userId)||!Number.isFinite(Number(x.amount))||Number(x.amount)<0)) return res.status(400).json({error:"Invalid expense splits"});
+    if (!group) return res.status(404).json({ error: "Group not found" });
+    const { userId, desc, amount, currency, paidBy, date, recurring, splitMethod, splits } = req.body || {};
+    if (!isGroupMember(group, userId)) return res.status(403).json({ error: "Only group members can update expenses" });
+    if (typeof desc !== "string" || !desc.trim() || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
+      return res.status(400).json({ error: "Enter a valid description and amount" });
+    }
+    if (!CURRENCIES.includes(currency) || !isGroupMember(group, paidBy)) return res.status(400).json({ error: "Invalid currency or payer" });
+    if (!Array.isArray(splits) || !splits.length || splits.some((split) => !group.memberIds.includes(split.userId) || !Number.isFinite(Number(split.amount)) || Number(split.amount) < 0)) {
+      return res.status(400).json({ error: "Invalid expense splits" });
+    }
+    const previousInvolvedIds = expenseInvolvedIds(expense);
     const sameAmountAndCurrency = expense.amount === Number(amount) && expense.currency === currency && expense.amountInBase != null;
-    const fx = sameAmountAndCurrency ? { amountInBase: expense.amountInBase, rate: expense.fxRate, rates: expense.fxRates } : await convertWithSnapshot(Number(amount),currency,group.baseCurrency);
-    Object.assign(expense,{desc,amount:Number(amount),currency,amountInBase:fx.amountInBase,fxRate:fx.rate,fxRates:fx.rates,paidBy,date,recurring:recurring||null,splitMethod,splits});
+    const fx = sameAmountAndCurrency ? { amountInBase: expense.amountInBase, rate: expense.fxRate, rates: expense.fxRates } : await convertWithSnapshot(Number(amount), currency, group.baseCurrency);
+    Object.assign(expense, { desc: desc.trim(), amount: Number(amount), currency, amountInBase: fx.amountInBase, fxRate: fx.rate, fxRates: fx.rates, paidBy, date, recurring: recurring || null, splitMethod, splits });
     await expense.save();
+    await notifyExpenseChange(group, expense, userId, "updated", previousInvolvedIds).catch((error) => console.error("Expense update notification failed:", error.message));
     res.json(mapExpense(expense));
   } catch (e) {
     res.status(500).json({ error: e.message || "Server error" });
@@ -481,12 +695,25 @@ app.put("/api/expenses/:id", async (req, res) => {
 });
 
 app.delete("/api/expenses/:id", async (req, res) => {
-  await Expense.findByIdAndDelete(req.params.id);
-  res.json({ ok: true });
+  if (!requireInternal(req, res)) return;
+  try {
+    const { userId } = req.body || {};
+    const expense = await Expense.findById(req.params.id);
+    if (!expense) return res.status(404).json({ error: "Expense not found" });
+    const group = await Group.findById(expense.groupId);
+    if (!group) return res.status(404).json({ error: "Group not found" });
+    if (!isGroupMember(group, userId)) return res.status(403).json({ error: "Only group members can remove expenses" });
+    await notifyExpenseDeleted(group, expense, userId).catch((error) => console.error("Expense deletion notification failed:", error.message));
+    await Expense.deleteOne({ _id: expense._id });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Could not delete expense" });
+  }
 });
 
 // Generate any due recurring expenses (call when opening a group)
 app.post("/api/groups/:id/recurring/process", async (req, res) => {
+  const group = await Group.findById(req.params.id);
   const templates = await Expense.find({ groupId: req.params.id, recurring: { $ne: null } });
   const now = new Date();
   for (const t of templates) {
@@ -496,11 +723,15 @@ app.post("/api/groups/:id/recurring/process", async (req, res) => {
     step();
     while (next <= now) {
       const newDate = next.toISOString().slice(0, 10);
-      await Expense.create({
+      const generatedExpense = await Expense.create({
         _id: nanoid(10), groupId: t.groupId, desc: t.desc, amount: t.amount, currency: t.currency,
         amountInBase: t.amountInBase, fxRate: t.fxRate, fxRates: t.fxRates, paidBy: t.paidBy, splits: t.splits, date: newDate,
-        recurring: null, splitMethod: t.splitMethod, lastGenerated: newDate, generatedFrom: t._id
+        createdBy: t.createdBy || null, recurring: null, splitMethod: t.splitMethod, lastGenerated: newDate, generatedFrom: t._id
       });
+      if (group) {
+        await notifyExpenseChange(group, generatedExpense, null, "added")
+          .catch((error) => console.error("Recurring expense notification failed:", error.message));
+      }
       t.lastGenerated = newDate;
       last = new Date(newDate); next = new Date(last); step();
     }
@@ -516,6 +747,7 @@ app.get("/api/groups/:id/settlements", async (req, res) => {
 });
 
 app.post("/api/groups/:id/settlements", async (req, res) => {
+  if (!requireInternal(req, res)) return;
   const { from, to, amount, currency, userId } = req.body || {};
   const group = await Group.findById(req.params.id);
   if (!group) return res.status(404).json({ error: "Group not found" });
@@ -527,10 +759,12 @@ app.post("/api/groups/:id/settlements", async (req, res) => {
   if (existingPending) return res.status(409).json({ error: "There is already a payment waiting for confirmation between these members" });
   const now = new Date();
   const s = await Settlement.create({ _id: nanoid(10), groupId: group._id, from, to, amount: Math.round(Number(amount) * 100) / 100, currency, date: now.toISOString().slice(0, 10), status: "pending_confirmation", reportedBy: userId, reportedAt: now });
+  await notifySettlement(group, s, to, from, "paid").catch((error) => console.error("Payment notification failed:", error.message));
   res.status(201).json({ id: s._id, groupId: s.groupId, from: s.from, to: s.to, amount: s.amount, currency: s.currency, date: s.date, status: s.status, reportedAt: s.reportedAt });
 });
 
 app.post("/api/groups/:groupId/settlements/:settlementId/confirm", async (req, res) => {
+  if (!requireInternal(req, res)) return;
   const { userId } = req.body || {};
   const group = await Group.findById(req.params.groupId);
   if (!group) return res.status(404).json({ error: "Group not found" });
@@ -541,10 +775,12 @@ app.post("/api/groups/:groupId/settlements/:settlementId/confirm", async (req, r
   if ((settlement.status || "settled") === "settled") return res.json({ id: settlement._id, status: "settled", confirmedAt: settlement.confirmedAt || settlement.updatedAt });
   settlement.status = "settled"; settlement.confirmedBy = userId; settlement.confirmedAt = new Date(); settlement.issueNote = null;
   await settlement.save();
+  await notifySettlement(group, settlement, settlement.from, userId, "confirmed").catch((error) => console.error("Payment confirmation notification failed:", error.message));
   res.json({ id: settlement._id, status: settlement.status, confirmedAt: settlement.confirmedAt });
 });
 
 app.post("/api/groups/:groupId/settlements/:settlementId/report-problem", async (req, res) => {
+  if (!requireInternal(req, res)) return;
   const { userId, note } = req.body || {};
   const group = await Group.findById(req.params.groupId);
   if (!group) return res.status(404).json({ error: "Group not found" });
@@ -556,6 +792,7 @@ app.post("/api/groups/:groupId/settlements/:settlementId/report-problem", async 
   settlement.status = "reported_problem"; settlement.reportedBy = userId; settlement.reportedAt = new Date();
   settlement.issueNote = typeof note === "string" ? note.trim().slice(0, 300) : "Recipient has not confirmed receipt";
   await settlement.save();
+  await notifySettlement(group, settlement, settlement.from, userId, "problem").catch((error) => console.error("Payment issue notification failed:", error.message));
   res.json({ id: settlement._id, status: settlement.status, reportedAt: settlement.reportedAt });
 });
 
