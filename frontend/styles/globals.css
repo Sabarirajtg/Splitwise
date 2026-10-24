@@ -1185,7 +1185,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   background: var(--surface-glow);
   border: 1px solid var(--border);
 }
-@media (max-width: 620px) {
+@media (max-width: 440px) {
   .balance-settlement-row {
     grid-template-columns: 36px minmax(0, 1fr);
     grid-template-areas:

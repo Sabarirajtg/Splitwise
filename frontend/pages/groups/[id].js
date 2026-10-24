@@ -384,7 +384,7 @@ export default function GroupDetail() {
         )}
 
         {tab === "activity" && (
-          <ActivityTab expenses={expenses} settlements={settlements} memberName={memberName} />
+          <ActivityTab expenses={expenses} settlements={settlements} memberName={memberName} user={user} />
         )}
       </div>
 
@@ -883,7 +883,7 @@ function BalancesTab({ group, expenses, settlements, balData, user, memberName, 
   );
 }
 
-function ActivityTab({ expenses, settlements, memberName }) {
+function ActivityTab({ expenses, settlements, memberName, user }) {
   const items = [
     ...expenses.map(e => ({ type: "expense", date: e.date, e })),
     ...settlements.map(s => ({ type: "settle", date: s.date, s }))
@@ -902,10 +902,10 @@ function ActivityTab({ expenses, settlements, memberName }) {
           <span style={{ width: 22 }}>{it.s.status === "settled" ? "✅" : it.s.status === "reported_problem" ? "⚠️" : "⏳"}</span>
           <div style={{ flex: 1, fontSize: 13.5 }}>
             {it.s.status === "settled"
-              ? <>{memberName(it.s.from)} paid {memberName(it.s.to)} <b>{money(it.s.amount, it.s.currency)}</b></>
+              ? <>{it.s.from === user.id ? "You" : memberName(it.s.from)} paid {it.s.to === user.id ? "you" : memberName(it.s.to)} <b>{money(it.s.amount, it.s.currency)}</b></>
               : it.s.status === "reported_problem"
-                ? <>{memberName(it.s.to)} reported a problem with the payment to {memberName(it.s.from)} · <b>{money(it.s.amount, it.s.currency)}</b></>
-                : <>{memberName(it.s.from)} marked <b>{money(it.s.amount, it.s.currency)}</b> as paid · awaiting {memberName(it.s.to)}’s confirmation</>}
+                ? <>{it.s.to === user.id ? "You reported a problem with" : memberName(it.s.to) + " reported a problem with"} the payment from {it.s.from === user.id ? "you" : memberName(it.s.from)} · <b>{money(it.s.amount, it.s.currency)}</b></>
+                : <>{it.s.from === user.id ? "You marked" : memberName(it.s.from) + " marked"} <b>{money(it.s.amount, it.s.currency)}</b> as paid · awaiting {it.s.to === user.id ? "your confirmation" : memberName(it.s.to) + "’s confirmation"}</>}
           </div>
           <div className="small muted">{it.date}</div>
         </div>
