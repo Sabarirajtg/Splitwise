@@ -759,61 +759,125 @@ function BalancesTab({ group, expenses, settlements, balData, user, memberName, 
   const { balances, simplified, baseCurrency } = balData;
   return (
     <>
-      <div className="card">
-        <h3 style={{ fontSize: 14.5, marginBottom: 12 }}>Simplified settle-up</h3>
+      <div className="card balance-settle-up-overview">
+        <h3 style={{ fontSize: 14.5, marginBottom: 4 }}>Simplified settle-up</h3>
+        <p className="small muted" style={{ marginTop: 0, marginBottom: 14 }}>
+          Review any reported payments separately from the balance still to pay.
+        </p>
         {simplified.length === 0
           ? <p className="muted small">Everyone is settled up 🎉</p>
-          : simplified.map((t, i) => (
-            <div className="balance-settlement-row" key={i}>
-              <div className="avatar balance-settlement-avatar" style={{ background: avatarColor(t.from) }}>{initials((group.members.find((member) => member.id === t.from) || {}).name || memberName(t.from))}</div>
-              <div className="balance-settlement-parties">
-                {t.from === user.id ? (
-                  <>You owe <b>{memberName(t.to)}</b></>
-                ) : t.to === user.id ? (
-                  <><b>{memberName(t.from)}</b> owes you</>
-                ) : (
-                  <><b>{memberName(t.from)}</b> owes <b>{memberName(t.to)}</b></>
-                )}
-              </div>
-              <div className="balance-settlement-amount">{money(t.amount, baseCurrency)}</div>
-              {(() => {
-                const related = settlements.filter((settlement) =>
-                  settlement.status !== "settled" &&
-                  settlement.from === t.from &&
-                  settlement.to === t.to
-                );
-                const unresolvedAmount = Math.round(related.reduce(
-                  (total, settlement) => total + Number(settlement.amount || 0), 0
-                ) * 100) / 100;
-                const remainingToSettle = Math.max(
-                  0,
-                  Math.round((Number(t.amount) - unresolvedAmount) * 100) / 100
-                );
+          : simplified.map((t, i) => {
+            const related = settlements.filter((settlement) =>
+              settlement.status !== "settled" &&
+              settlement.from === t.from &&
+              settlement.to === t.to
+            );
+            const unresolvedAmount = Math.round(related.reduce(
+              (total, settlement) => total + Number(settlement.amount || 0), 0
+            ) * 100) / 100;
+            const remainingToSettle = Math.max(
+              0,
+              Math.round((Number(t.amount) - unresolvedAmount) * 100) / 100
+            );
+            const fromMember = group.members.find((member) => member.id === t.from);
 
-                return (
-                  <div className="balance-settlement-actions">
-                    {related.map((settlement) => settlement.status === "reported_problem" ? (
-                      <div className="balance-payment-status" key={settlement.id}>
-                        <span className="pill pill-coral balance-issue-pill">Not received · {money(settlement.amount, baseCurrency)}</span>
-                        {t.from === user.id && (
-                          <button className="btn-ghost balance-review-button" onClick={() => onReview(settlement)}>Review payment</button>
-                        )}
-                      </div>
+            return (
+              <div className="balance-settlement-card" key={i}>
+                <div className="balance-settlement-summary">
+                  <div
+                    className="avatar balance-settlement-avatar"
+                    style={{ background: avatarColor(t.from) }}
+                    aria-hidden="true"
+                  >
+                    {initials(fromMember ? fromMember.name : memberName(t.from))}
+                  </div>
+                  <div className="balance-settlement-parties">
+                    {t.from === user.id ? (
+                      <>You owe <b>{memberName(t.to)}</b></>
+                    ) : t.to === user.id ? (
+                      <><b>{memberName(t.from)}</b> owes you</>
                     ) : (
-                      <span className="pill pill-amber" key={settlement.id}>
-                        {money(settlement.amount, baseCurrency)} awaiting confirmation
-                      </span>
+                      <><b>{memberName(t.from)}</b> owes <b>{memberName(t.to)}</b></>
+                    )}
+                  </div>
+                  <div className="balance-settlement-amount">{money(t.amount, baseCurrency)}</div>
+                </div>
+
+                {related.length > 0 && (
+                  <div className="balance-payment-updates">
+                    {related.map((settlement) => settlement.status === "reported_problem" ? (
+                      <section className="balance-payment-issue" key={settlement.id} aria-label="Payment needs review">
+                        <div className="balance-payment-issue-heading">
+                          <span className="balance-payment-alert-icon" aria-hidden="true">!</span>
+                          <div className="balance-payment-issue-copy">
+                            <strong>Payment needs review</strong>
+                            <p>
+                              {settlement.to === user.id
+                                ? "You marked this previous payment as not received."
+                                : memberName(settlement.to) + " marked this previous payment as not received."}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="balance-payment-issue-actions">
+                          <span className="pill pill-coral balance-issue-pill">
+                            Not received · {money(settlement.amount, baseCurrency)}
+                          </span>
+                          {t.from === user.id && (
+                            <button
+                              className="btn-ghost balance-review-button"
+                              onClick={() => onReview(settlement)}
+                            >
+                              Review payment
+                            </button>
+                          )}
+                        </div>
+                      </section>
+                    ) : (
+                      <section className="balance-payment-awaiting" key={settlement.id}>
+                        <span className="balance-awaiting-icon" aria-hidden="true">◷</span>
+                        <div className="balance-payment-awaiting-copy">
+                          <strong>Payment awaiting confirmation</strong>
+                          <p>
+                            {settlement.to === user.id
+                              ? memberName(settlement.from) + " marked this amount as paid. Please confirm receipt."
+                              : "Waiting for " + memberName(settlement.to) + " to confirm receipt."}
+                          </p>
+                        </div>
+                        <strong className="balance-payment-awaiting-amount">
+                          {money(settlement.amount, baseCurrency)}
+                        </strong>
+                      </section>
                     ))}
-                    {t.from === user.id && remainingToSettle > 0.009 && (
-                      <button className="btn-ghost balance-settle-button" onClick={() => onSettle(t.from, t.to, remainingToSettle)}>
-                        Settle {money(remainingToSettle, baseCurrency)}
+                  </div>
+                )}
+
+                {remainingToSettle > 0.009 && (
+                  <div className="balance-remaining-card">
+                    <div className="balance-remaining-icon" aria-hidden="true">₹</div>
+                    <div className="balance-remaining-copy">
+                      <strong>Remaining balance</strong>
+                      <p>
+                        {related.length > 0
+                          ? "Excludes the payment update(s) shown above."
+                          : "Settle this amount to clear the balance."}
+                      </p>
+                    </div>
+                    <strong className="balance-remaining-amount">
+                      {money(remainingToSettle, baseCurrency)}
+                    </strong>
+                    {t.from === user.id && (
+                      <button
+                        className="btn-primary balance-remaining-button"
+                        onClick={() => onSettle(t.from, t.to, remainingToSettle)}
+                      >
+                        Settle remaining
                       </button>
                     )}
                   </div>
-                );
-              })()}
-            </div>
-          ))}
+                )}
+              </div>
+            );
+          })}
       </div>
       <div className="card">
         <h3 style={{ fontSize: 14.5, marginBottom: 12 }}>
