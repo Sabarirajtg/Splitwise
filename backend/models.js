@@ -39,11 +39,23 @@ const ExpenseSchema = new Schema({
   fxRates: { type: Schema.Types.Mixed, default: null },
   paidBy: String,
   splits: [SplitSchema],
+  createdBy: { type: String, default: null },
   date: String,
   recurring: { type: String, default: null }, // 'weekly' | 'monthly' | null
   splitMethod: String,
   lastGenerated: String,
   generatedFrom: { type: String, default: null }
+}, { timestamps: true });
+
+const PushSubscriptionSchema = new Schema({
+  _id: { type: String },
+  userId: { type: String, required: true, index: true },
+  endpoint: { type: String, required: true, unique: true },
+  keys: {
+    p256dh: { type: String, required: true },
+    auth: { type: String, required: true }
+  },
+  expirationTime: { type: Date, default: null }
 }, { timestamps: true });
 
 const SettlementSchema = new Schema({
@@ -66,5 +78,6 @@ module.exports = {
   User: mongoose.model("User", UserSchema),
   Group: mongoose.model("Group", GroupSchema),
   Expense: mongoose.model("Expense", ExpenseSchema),
-  Settlement: mongoose.model("Settlement", SettlementSchema)
+  Settlement: mongoose.model("Settlement", SettlementSchema),
+  PushSubscription: mongoose.model("PushSubscription", PushSubscriptionSchema)
 };

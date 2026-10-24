@@ -5,6 +5,7 @@ import { signOut } from "next-auth/react";
 import CurrencySelect from "../../components/CurrencySelect";
 import { showToast } from "../../lib/toast";
 import LoadingButton from "../../components/LoadingButton";
+import PushNotificationSetup from "../../components/PushNotificationSetup";
 
 export default function Groups() {
   const router = useRouter();
@@ -182,6 +183,8 @@ export default function Groups() {
             {pendingSettlements.length > 3 && <p className="small muted">And {pendingSettlements.length - 3} more payment update(s).</p>}
           </section>
         )}
+        {user && <PushNotificationSetup userId={user.id} />}
+
         {profile && profile.upiId && !upiEditorOpen && (
           <div className="upi-saved-row">
             <span><strong>UPI ID</strong> · {profile.upiId}</span>
@@ -248,6 +251,7 @@ export default function Groups() {
       {sheet === "new" && (
         <div className="overlay" onClick={e => e.target === e.currentTarget && setSheet(null)}>
           <div className="sheet">
+            <button type="button" className="sheet-close-button" aria-label="Close new group dialog" onClick={() => setSheet(null)} disabled={busy}>×</button>
             <div className="sheet-handle" />
             <h3 style={{ marginBottom: 16 }}>New group</h3>
             <div className="field">

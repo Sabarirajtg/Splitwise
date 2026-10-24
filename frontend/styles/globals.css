@@ -1058,3 +1058,319 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .google-signin-button .loading-button-label svg {
   flex: 0 0 20px;
 }
+
+
+/* Web push settings card */
+.push-notification-card {
+  margin-bottom: 18px;
+}
+.push-notification-card .upi-setup-icon {
+  font-size: 18px;
+}
+
+
+/* Accessible top-right close controls for modal sheets */
+.sheet {
+  position: relative;
+}
+.sheet-close-button {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--text);
+  font-size: 25px;
+  font-weight: 450;
+  line-height: 1;
+  box-shadow: none;
+  cursor: pointer;
+}
+.sheet-close-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--purple-light);
+}
+.sheet-close-button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+.sheet-close-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+
+/* Grouped settle-up card: summary, payment status, remaining balance */
+.balance-settle-up-overview > .muted {
+  line-height: 1.45;
+}
+.balance-settlement-card {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg);
+}
+.balance-settlement-card + .balance-settlement-card {
+  margin-top: 14px;
+}
+.balance-settlement-summary {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.balance-settlement-avatar {
+  grid-row: 1;
+  flex-shrink: 0;
+}
+.balance-settlement-parties {
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.balance-settlement-amount {
+  min-width: max-content;
+  justify-self: end;
+  text-align: right;
+  white-space: nowrap;
+  font-size: clamp(19px, 2.4vw, 25px);
+  font-weight: 800;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.balance-payment-updates {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+.balance-payment-issue {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--coral-light);
+  border-radius: 13px;
+  background: var(--coral-light);
+}
+.balance-payment-issue-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.balance-payment-alert-icon {
+  display: inline-flex;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--coral);
+  color: #fff;
+  font-weight: 900;
+  font-size: 18px;
+  line-height: 1;
+}
+.balance-payment-issue-copy {
+  min-width: 0;
+  flex: 1;
+  color: var(--text);
+}
+.balance-payment-issue-copy strong,
+.balance-payment-awaiting-copy strong,
+.balance-remaining-copy strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.balance-payment-issue-copy p,
+.balance-payment-awaiting-copy p,
+.balance-remaining-copy p {
+  margin: 4px 0 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.balance-payment-issue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 12px 0 0 40px;
+}
+.balance-payment-issue-actions .balance-issue-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 7px 11px;
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.balance-payment-issue-actions .balance-review-button {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--coral-dark);
+  border-radius: 9px;
+  color: var(--coral-dark);
+  font-size: 13px;
+  white-space: normal;
+}
+.balance-payment-awaiting {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.balance-awaiting-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--amber-light);
+  color: var(--amber-dark);
+  font-weight: 800;
+  font-size: 23px;
+}
+.balance-payment-awaiting-copy {
+  min-width: 0;
+}
+.balance-payment-awaiting-amount {
+  white-space: nowrap;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.balance-remaining-card {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) max-content;
+  grid-template-areas:
+    "icon copy amount"
+    ". . action";
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--border);
+}
+.balance-remaining-icon {
+  grid-area: icon;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--purple-light);
+  color: var(--purple-dark);
+  font-size: 18px;
+  font-weight: 800;
+}
+.balance-remaining-copy {
+  grid-area: copy;
+  min-width: 0;
+}
+.balance-remaining-amount {
+  grid-area: amount;
+  justify-self: end;
+  text-align: right;
+  white-space: nowrap;
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.balance-remaining-button {
+  grid-area: action;
+  width: auto;
+  max-width: 100%;
+  min-width: 150px;
+  justify-self: end;
+  padding: 10px 15px;
+  font-size: 13.5px;
+  border-radius: 10px;
+  white-space: normal;
+}
+@media (max-width: 620px) {
+  .balance-settlement-card {
+    padding: 13px;
+  }
+  .balance-settlement-summary {
+    grid-template-columns: 36px minmax(0, 1fr);
+    grid-template-areas:
+      "avatar parties"
+      ". amount";
+    gap: 8px 10px;
+  }
+  .balance-settlement-summary .balance-settlement-avatar {
+    grid-area: avatar;
+  }
+  .balance-settlement-parties {
+    grid-area: parties;
+    font-size: 14px;
+  }
+  .balance-settlement-amount {
+    grid-area: amount;
+    justify-self: start;
+    text-align: left;
+    font-size: 21px;
+  }
+  .balance-payment-issue {
+    padding: 12px;
+  }
+  .balance-payment-issue-actions {
+    margin-left: 0;
+  }
+  .balance-payment-issue-actions .balance-review-button {
+    margin-left: auto;
+  }
+  .balance-payment-awaiting {
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 9px;
+  }
+  .balance-payment-awaiting-amount {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .balance-remaining-card {
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "icon copy amount"
+      ". . action";
+    gap: 10px 8px;
+  }
+  .balance-remaining-icon {
+    width: 34px;
+    height: 34px;
+  }
+  .balance-remaining-copy strong {
+    font-size: 13.5px;
+  }
+  .balance-remaining-copy p {
+    font-size: 12px;
+  }
+  .balance-remaining-amount {
+    font-size: 16px;
+  }
+  .balance-remaining-button {
+    min-width: 0;
+    padding: 9px 12px;
+    font-size: 12.5px;
+  }
+}

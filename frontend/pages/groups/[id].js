@@ -123,15 +123,29 @@ export default function GroupDetail() {
     setSheet("settle");
   }
 
+  function reviewSettlement(settlement) {
+    setSettleDraft({
+      from: settlement.from,
+      to: settlement.to,
+      amount: settlement.amount,
+      currency: settlement.currency || group.baseCurrency,
+      existingSettlementId: settlement.id
+    });
+    setSheet("settle");
+  }
+
   async function markSettlementPaid() {
     if (!settleDraft || !user || settlementAction) return;
+    const isRetry = Boolean(settleDraft.existingSettlementId);
     setSettlementAction("mark-paid");
     try {
       await api.recordSettlement(id, { ...settleDraft, userId: user.id });
       setSheet(null);
       setSettleDraft(null);
       await loadAll();
-      showToast("Marked as paid. Waiting for the recipient to confirm.");
+      showToast(isRetry
+        ? "Payment marked paid again. Waiting for the recipient to confirm."
+        : "Marked as paid. Waiting for the recipient to confirm.");
     } catch (error) {
       showToast(error.message || "Could not record payment", "error");
     } finally {
@@ -239,7 +253,10 @@ export default function GroupDetail() {
     );
   }
 
-  const memberName = (uid) => (group.members.find(m => m.id === uid) || {}).name || "?";
+  const memberName = (uid) => {
+    if (uid === user.id) return "You";
+    return (group.members.find((member) => member.id === uid) || {}).name || "?";
+  };
   const groupPendingSettlements = settlements.filter((settlement) => settlement.status !== "settled" && (settlement.from === user.id || settlement.to === user.id));
 
   return (
@@ -308,7 +325,7 @@ export default function GroupDetail() {
         )}
 
         {groupPendingSettlements.length > 0 && (
-          <PendingSettlementPanel settlements={groupPendingSettlements} user={user} memberName={memberName} currency={group.baseCurrency} onConfirm={confirmSettlement} onReportProblem={reportSettlementProblem} loadingAction={settlementAction} />
+          <PendingSettlementPanel settlements={groupPendingSettlements} user={user} memberName={memberName} currency={group.baseCurrency} onConfirm={confirmSettlement} onReportProblem={reportSettlementProblem} onReview={reviewSettlement} loadingAction={settlementAction} />
         )}
 
         {tab === "overview" && <ExpensesOverview group={group} expenses={expenses} user={user} />}
@@ -349,6 +366,7 @@ export default function GroupDetail() {
           <BalancesTab
             group={group} expenses={expenses} settlements={settlements} balData={balData} user={user} memberName={memberName}
             onSettle={startSettlement}
+            onReview={reviewSettlement}
           />
         )}
 
@@ -366,7 +384,7 @@ export default function GroupDetail() {
         )}
 
         {tab === "activity" && (
-          <ActivityTab expenses={expenses} settlements={settlements} memberName={memberName} />
+          <ActivityTab expenses={expenses} settlements={settlements} memberName={memberName} user={user} />
         )}
       </div>
 
@@ -377,6 +395,7 @@ export default function GroupDetail() {
       {sheet === "settings" && settings && (
         <div className="overlay">
           <div className="sheet">
+            <button type="button" className="sheet-close-button" aria-label="Close group settings" onClick={() => setSheet(null)} disabled={savingSettings || savingSimplification}>×</button>
             <div className="sheet-handle" />
             <h3 style={{ marginBottom: 14 }}>
               Configure group currencies
@@ -410,7 +429,7 @@ export default function GroupDetail() {
   );
 }
 
-function PendingSettlementPanel({ settlements, user, memberName, currency, onConfirm, onReportProblem, loadingAction }) {
+function PendingSettlementPanel({ settlements, user, memberName, currency, onConfirm, onReportProblem, onReview, loadingAction }) {
   return (
     <section className="pending-payments" aria-label="Payments needing attention">
       <div className="pending-payments-heading"><span className="attention-count">{settlements.length}</span><div><h3>Payment updates</h3><p className="small muted">These payments are not settled yet.</p></div></div>
@@ -424,7 +443,13 @@ function PendingSettlementPanel({ settlements, user, memberName, currency, onCon
               <p className="small">{isProblem ? (isRecipient ? "You reported a problem with this payment." : memberName(settlement.to) + " reported a problem with this payment.") : (isRecipient ? memberName(settlement.from) + " marked this as paid." : "Waiting for " + memberName(settlement.to) + " to confirm.")}</p>
               {isProblem && settlement.issueNote && <p className="small muted">{settlement.issueNote}</p>}
             </div>
-            {isRecipient && <div className="pending-payment-actions"><LoadingButton className="btn-primary pending-confirm-button" loading={loadingAction === `${settlement.id}:confirm`} disabled={Boolean(loadingAction)} onClick={() => onConfirm(settlement.id)}>Received</LoadingButton>{!isProblem && <LoadingButton className="pending-problem-button" loading={loadingAction === `${settlement.id}:report`} disabled={Boolean(loadingAction)} onClick={() => onReportProblem(settlement.id)}>Not received</LoadingButton>}</div>}
+            {isRecipient && <div className="pending-payment-actions">
+              <LoadingButton className="btn-primary pending-confirm-button" loading={loadingAction === `${settlement.id}:confirm`} disabled={Boolean(loadingAction)} onClick={() => onConfirm(settlement.id)}>Received</LoadingButton>
+              {!isProblem && <LoadingButton className="pending-problem-button" loading={loadingAction === `${settlement.id}:report`} disabled={Boolean(loadingAction)} onClick={() => onReportProblem(settlement.id)}>Not received</LoadingButton>}
+            </div>}
+            {!isRecipient && isProblem && <div className="pending-payment-actions">
+              <button className="btn-primary pending-confirm-button" disabled={Boolean(loadingAction)} onClick={() => onReview(settlement)}>Review / pay again</button>
+            </div>}
           </div>
         );
       })}
@@ -443,13 +468,16 @@ function PaymentSheet({ group, draft, onMarkPaid, onClose, loading, disabled }) 
   return (
     <div className="overlay" onClick={(event) => event.target === event.currentTarget && onClose()}>
       <div className="sheet payment-sheet">
+        <button type="button" className="sheet-close-button" aria-label="Close payment dialog" onClick={onClose} disabled={disabled}>×</button>
         <div className="sheet-handle" />
         <p className="chart-eyebrow">SETTLEMENT</p>
-        <h2 style={{ marginBottom: 6 }}>Pay {recipient ? recipient.name : "group member"}</h2>
-        <p className="muted small">Once you have made the transfer, mark it as paid. The recipient can confirm when they are next in SplitShare.</p>
+        <h2 style={{ marginBottom: 6 }}>{draft.existingSettlementId ? "Review payment to " : "Pay "}{recipient ? recipient.name : "group member"}</h2>
+        <p className="muted small">{draft.existingSettlementId
+          ? "The recipient reported that this payment was not received. Review this original amount; if you pay again, resubmit this same payment for confirmation."
+          : "Once you have made the transfer, mark it as paid. The recipient can confirm when they are next in SplitShare."}</p>
         <div className="payment-amount-card"><span className="small muted">Amount to pay</span><strong>{money(draft.amount, draft.currency)}</strong>{canUseUpi && <span className="small muted">UPI ID · {recipient.upiId}</span>}</div>
         {canUseUpi ? <button className="btn-primary" onClick={openUpi}>Pay with UPI</button> : <p className="payment-hint">{draft.currency !== "INR" ? "UPI links are available for INR settlements. You can still pay another way." : "This person has not added a UPI ID yet. You can still pay them another way."}</p>}
-        <LoadingButton className="btn-primary payment-mark-button" loading={loading} disabled={disabled} onClick={onMarkPaid}>{loading ? "Sending payment request…" : "I’ve paid — request confirmation"}</LoadingButton>
+        <LoadingButton className="btn-primary payment-mark-button" loading={loading} disabled={disabled} onClick={onMarkPaid}>{loading ? "Sending payment request…" : draft.existingSettlementId ? "I’ve paid again — request confirmation" : "I’ve paid — request confirmation"}</LoadingButton>
         <p className="small muted payment-footnote">This does not mark the debt as settled. The balance updates only after the recipient confirms receipt.</p>
         <button className="linkbtn" onClick={onClose} disabled={disabled} style={{ display: "block", margin: "14px auto 0" }}>Cancel</button>
       </div>
@@ -484,7 +512,7 @@ function ExpensesOverview({ group, expenses, user }) {
 
   const categoryData = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]);
   const memberData = group.members
-    .map((member) => ({ label: member.name, value: memberTotals[member.id] || 0, id: member.id }))
+    .map((member) => ({ label: member.id === user.id ? "You" : member.name, value: memberTotals[member.id] || 0, id: member.id }))
     .sort((a, b) => b.value - a.value);
   const dateData = Object.entries(dateTotals).sort((a, b) => a[0].localeCompare(b[0])).slice(-14);
   const totalGroupExpense = expenses.reduce((total, expense) => total + (Number(expense.amountInBase ?? expense.amount) || 0), 0);
@@ -710,7 +738,7 @@ function GroupSettings({
                 {initials(member.name)}
               </div>
               <div style={{ flex: 1, fontSize: 13.5 }}>
-                {member.name}
+                {member.id === user.id ? "You" : member.name}
               </div>
               <span
                 className={`pill ${
@@ -727,30 +755,129 @@ function GroupSettings({
   );
 }
 
-function BalancesTab({ group, expenses, settlements, balData, user, memberName, onSettle }) {
+function BalancesTab({ group, expenses, settlements, balData, user, memberName, onSettle, onReview }) {
   const { balances, simplified, baseCurrency } = balData;
   return (
     <>
-      <div className="card">
-        <h3 style={{ fontSize: 14.5, marginBottom: 12 }}>Simplified settle-up</h3>
+      <div className="card balance-settle-up-overview">
+        <h3 style={{ fontSize: 14.5, marginBottom: 4 }}>Simplified settle-up</h3>
+        <p className="small muted" style={{ marginTop: 0, marginBottom: 14 }}>
+          Review any reported payments separately from the balance still to pay.
+        </p>
         {simplified.length === 0
           ? <p className="muted small">Everyone is settled up 🎉</p>
-          : simplified.map((t, i) => (
-            <div className="split-row" key={i}>
-              <div className="avatar" style={{ background: avatarColor(t.from) }}>{initials(memberName(t.from))}</div>
-              <div style={{ flex: 1, fontSize: 13.5 }}>
-                <b>{memberName(t.from)}</b> owes <b>{memberName(t.to)}</b>
+          : simplified.map((t, i) => {
+            const related = settlements.filter((settlement) =>
+              settlement.status !== "settled" &&
+              settlement.from === t.from &&
+              settlement.to === t.to
+            );
+            const unresolvedAmount = Math.round(related.reduce(
+              (total, settlement) => total + Number(settlement.amount || 0), 0
+            ) * 100) / 100;
+            const remainingToSettle = Math.max(
+              0,
+              Math.round((Number(t.amount) - unresolvedAmount) * 100) / 100
+            );
+            const fromMember = group.members.find((member) => member.id === t.from);
+
+            return (
+              <div className="balance-settlement-card" key={i}>
+                <div className="balance-settlement-summary">
+                  <div
+                    className="avatar balance-settlement-avatar"
+                    style={{ background: avatarColor(t.from) }}
+                    aria-hidden="true"
+                  >
+                    {initials(fromMember ? fromMember.name : memberName(t.from))}
+                  </div>
+                  <div className="balance-settlement-parties">
+                    {t.from === user.id ? (
+                      <>You owe <b>{memberName(t.to)}</b></>
+                    ) : t.to === user.id ? (
+                      <><b>{memberName(t.from)}</b> owes you</>
+                    ) : (
+                      <><b>{memberName(t.from)}</b> owes <b>{memberName(t.to)}</b></>
+                    )}
+                  </div>
+                  <div className="balance-settlement-amount">{money(t.amount, baseCurrency)}</div>
+                </div>
+
+                {related.length > 0 && (
+                  <div className="balance-payment-updates">
+                    {related.map((settlement) => settlement.status === "reported_problem" ? (
+                      <section className="balance-payment-issue" key={settlement.id} aria-label="Payment needs review">
+                        <div className="balance-payment-issue-heading">
+                          <span className="balance-payment-alert-icon" aria-hidden="true">!</span>
+                          <div className="balance-payment-issue-copy">
+                            <strong>Payment needs review</strong>
+                            <p>
+                              {settlement.to === user.id
+                                ? "You marked this previous payment as not received."
+                                : memberName(settlement.to) + " marked this previous payment as not received."}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="balance-payment-issue-actions">
+                          <span className="pill pill-coral balance-issue-pill">
+                            Not received · {money(settlement.amount, baseCurrency)}
+                          </span>
+                          {t.from === user.id && (
+                            <button
+                              className="btn-ghost balance-review-button"
+                              onClick={() => onReview(settlement)}
+                            >
+                              Review payment
+                            </button>
+                          )}
+                        </div>
+                      </section>
+                    ) : (
+                      <section className="balance-payment-awaiting" key={settlement.id}>
+                        <span className="balance-awaiting-icon" aria-hidden="true">◷</span>
+                        <div className="balance-payment-awaiting-copy">
+                          <strong>Payment awaiting confirmation</strong>
+                          <p>
+                            {settlement.to === user.id
+                              ? memberName(settlement.from) + " marked this amount as paid. Please confirm receipt."
+                              : "Waiting for " + memberName(settlement.to) + " to confirm receipt."}
+                          </p>
+                        </div>
+                        <strong className="balance-payment-awaiting-amount">
+                          {money(settlement.amount, baseCurrency)}
+                        </strong>
+                      </section>
+                    ))}
+                  </div>
+                )}
+
+                {remainingToSettle > 0.009 && (
+                  <div className="balance-remaining-card">
+                    <div className="balance-remaining-icon" aria-hidden="true">₹</div>
+                    <div className="balance-remaining-copy">
+                      <strong>Remaining balance</strong>
+                      <p>
+                        {related.length > 0
+                          ? "Excludes the payment update(s) shown above."
+                          : "Settle this amount to clear the balance."}
+                      </p>
+                    </div>
+                    <strong className="balance-remaining-amount">
+                      {money(remainingToSettle, baseCurrency)}
+                    </strong>
+                    {t.from === user.id && (
+                      <button
+                        className="btn-primary balance-remaining-button"
+                        onClick={() => onSettle(t.from, t.to, remainingToSettle)}
+                      >
+                        Settle remaining
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
-              <div style={{ fontWeight: 700 }}>{money(t.amount, baseCurrency)}</div>
-              {(() => {
-                const pending = settlements.find((settlement) => settlement.status !== "settled" && settlement.from === t.from && settlement.to === t.to);
-                if (pending) return <span className="pill pill-amber">Awaiting confirmation</span>;
-                return t.from === user.id
-                  ? <button className="btn-ghost" onClick={() => onSettle(t.from, t.to, t.amount)}>Settle</button>
-                  : null;
-              })()}
-            </div>
-          ))}
+            );
+          })}
       </div>
       <div className="card">
         <h3 style={{ fontSize: 14.5, marginBottom: 12 }}>
@@ -810,7 +937,7 @@ function BalancesTab({ group, expenses, settlements, balData, user, memberName, 
           return (
             <div className="split-row" key={m.id}>
               <div className="avatar" style={{ background: avatarColor(m.id) }}>{initials(m.name)}</div>
-              <div style={{ flex: 1, fontSize: 13.5 }}>{m.name}</div>
+              <div style={{ flex: 1, fontSize: 13.5 }}>{m.id === user.id ? "You" : m.name}</div>
               {pill}
             </div>
           );
@@ -820,7 +947,7 @@ function BalancesTab({ group, expenses, settlements, balData, user, memberName, 
   );
 }
 
-function ActivityTab({ expenses, settlements, memberName }) {
+function ActivityTab({ expenses, settlements, memberName, user }) {
   const items = [
     ...expenses.map(e => ({ type: "expense", date: e.date, e })),
     ...settlements.map(s => ({ type: "settle", date: s.date, s }))
@@ -839,10 +966,10 @@ function ActivityTab({ expenses, settlements, memberName }) {
           <span style={{ width: 22 }}>{it.s.status === "settled" ? "✅" : it.s.status === "reported_problem" ? "⚠️" : "⏳"}</span>
           <div style={{ flex: 1, fontSize: 13.5 }}>
             {it.s.status === "settled"
-              ? <>{memberName(it.s.from)} paid {memberName(it.s.to)} <b>{money(it.s.amount, it.s.currency)}</b></>
+              ? <>{it.s.from === user.id ? "You" : memberName(it.s.from)} paid {it.s.to === user.id ? "you" : memberName(it.s.to)} <b>{money(it.s.amount, it.s.currency)}</b></>
               : it.s.status === "reported_problem"
-                ? <>{memberName(it.s.to)} reported a problem with the payment to {memberName(it.s.from)} · <b>{money(it.s.amount, it.s.currency)}</b></>
-                : <>{memberName(it.s.from)} marked <b>{money(it.s.amount, it.s.currency)}</b> as paid · awaiting {memberName(it.s.to)}’s confirmation</>}
+                ? <>{it.s.to === user.id ? "You reported a problem with" : memberName(it.s.to) + " reported a problem with"} the payment from {it.s.from === user.id ? "you" : memberName(it.s.from)} · <b>{money(it.s.amount, it.s.currency)}</b></>
+                : <>{it.s.from === user.id ? "You marked" : memberName(it.s.from) + " marked"} <b>{money(it.s.amount, it.s.currency)}</b> as paid · awaiting {it.s.to === user.id ? "your confirmation" : memberName(it.s.to) + "’s confirmation"}</>}
           </div>
           <div className="small muted">{it.date}</div>
         </div>
@@ -960,6 +1087,7 @@ function InviteSheet({ group, user, invite, setInvite, onClose }) {
       onClick={(event) => event.target === event.currentTarget && onClose()}
     >
       <div className="sheet">
+        <button type="button" className="sheet-close-button" aria-label="Close invite dialog" onClick={onClose} disabled={busy}>×</button>
         <div className="sheet-handle" />
         <h3 style={{ marginBottom: 12 }}>
           Invite friends to {group.name}
@@ -1144,6 +1272,7 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
   return (
     <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="sheet">
+        <button type="button" className="sheet-close-button" aria-label="Close expense dialog" onClick={onClose} disabled={busy}>×</button>
         <div className="sheet-handle" />
         <h3 style={{ marginBottom: 14 }}>{editing ? "Edit expense" : "Add expense"}</h3>
         <div className="field">
@@ -1170,7 +1299,11 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
         <div className="field">
           <label>Paid by</label>
           <select value={paidBy} onChange={e => setPaidBy(e.target.value)}>
-            {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {members.map(m => (
+              <option key={m.id} value={m.id}>
+                {m.id === user.id ? `You (${m.name})` : m.name}
+              </option>
+            ))}
           </select>
         </div>
         <div className="field">
@@ -1201,7 +1334,7 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
               <div className="split-row" key={m.id}>
                 <input type="checkbox" checked={included} onChange={() => toggleMember(m.id)} style={{ width: "auto" }} />
                 <div className="avatar" style={{ background: avatarColor(m.id) }}>{initials(m.name)}</div>
-                <div style={{ flex: 1, fontSize: 13.5 }}>{m.name}</div>
+                <div style={{ flex: 1, fontSize: 13.5 }}>{m.id === user.id ? `You (${m.name})` : m.name}</div>
                 {splitMethod === "equal" && (
                   <span className="small muted" style={{ width: 74, textAlign: "right" }}>
                     {included && includedIds.length > 0 ? money(amt / includedIds.length, currency) : ""}
