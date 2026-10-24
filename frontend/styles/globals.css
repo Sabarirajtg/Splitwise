@@ -1207,14 +1207,19 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     font-size: 21px;
   }
   .balance-settlement-actions {
-    display: grid;
-    grid-template-columns: minmax(0, max-content) minmax(0, max-content);
-    justify-content: start;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
     align-items: center;
     gap: 8px;
   }
   .balance-payment-status {
-    display: contents;
+    display: flex;
+    flex: 1 1 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
   }
   .balance-settlement-actions .pill {
     max-width: 100%;
