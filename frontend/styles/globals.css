@@ -1108,26 +1108,30 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 
 
-/* Responsive settle-up layout: separate parties, amount and payment actions. */
+/* Responsive settle-up cards */
 .balance-settlement-row {
   display: grid;
-  grid-template-columns: 38px minmax(150px, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
   grid-template-areas:
     "avatar parties amount"
     ". actions actions";
   align-items: center;
-  column-gap: 12px;
-  row-gap: 10px;
-  padding: 15px 0;
+  column-gap: 14px;
+  row-gap: 12px;
+  padding: 18px 0;
   border-bottom: 1px solid var(--border);
 }
 .balance-settlement-row:last-child { border-bottom: 0; }
-.balance-settlement-avatar { grid-area: avatar; }
+.balance-settlement-avatar {
+  grid-area: avatar;
+  align-self: start;
+  margin-top: 2px;
+}
 .balance-settlement-parties {
   grid-area: parties;
   min-width: 0;
-  font-size: 14px;
-  line-height: 1.4;
+  font-size: 15px;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 .balance-settlement-amount {
@@ -1136,7 +1140,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   min-width: max-content;
   white-space: nowrap;
   text-align: right;
-  font-size: clamp(16px, 2vw, 22px);
+  font-size: clamp(18px, 2.3vw, 24px);
+  line-height: 1.2;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
@@ -1147,7 +1152,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
+  gap: 8px 12px;
 }
 .balance-payment-status {
   display: flex;
@@ -1156,15 +1161,29 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   align-items: center;
   gap: 8px;
 }
-.balance-settlement-actions .pill {
+.balance-settlement-actions .balance-issue-pill {
+  padding: 7px 12px;
   max-width: 100%;
+  font-size: 12.5px;
+  line-height: 1.25;
   white-space: normal;
   overflow-wrap: anywhere;
 }
-.balance-settlement-actions .btn-ghost {
-  flex: 0 0 auto;
+.balance-settlement-actions .balance-review-button,
+.balance-settlement-actions .balance-settle-button {
+  width: auto;
+  min-width: 0;
   max-width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  line-height: 1.25;
+  text-align: left;
   white-space: normal;
+}
+.balance-settlement-actions .balance-settle-button {
+  background: var(--surface-glow);
+  border: 1px solid var(--border);
 }
 @media (max-width: 620px) {
   .balance-settlement-row {
@@ -1174,15 +1193,39 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
       ". amount"
       ". actions";
     column-gap: 10px;
-    row-gap: 8px;
+    row-gap: 9px;
+    padding: 16px 0;
+  }
+  .balance-settlement-parties {
+    font-size: 14.5px;
+    line-height: 1.4;
   }
   .balance-settlement-amount {
     justify-self: start;
     text-align: left;
-    font-size: 18px;
+    min-width: 0;
+    font-size: 21px;
   }
-  .balance-settlement-actions,
+  .balance-settlement-actions {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(0, max-content);
+    justify-content: start;
+    align-items: center;
+    gap: 8px;
+  }
   .balance-payment-status {
-    align-items: flex-start;
+    display: contents;
+  }
+  .balance-settlement-actions .pill {
+    max-width: 100%;
+  }
+  .balance-settlement-actions .balance-issue-pill {
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+  .balance-settlement-actions .balance-review-button,
+  .balance-settlement-actions .balance-settle-button {
+    padding: 8px 10px;
+    font-size: 13px;
   }
 }

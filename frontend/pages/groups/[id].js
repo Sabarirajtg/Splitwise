@@ -767,7 +767,13 @@ function BalancesTab({ group, expenses, settlements, balData, user, memberName, 
             <div className="balance-settlement-row" key={i}>
               <div className="avatar balance-settlement-avatar" style={{ background: avatarColor(t.from) }}>{initials((group.members.find((member) => member.id === t.from) || {}).name || memberName(t.from))}</div>
               <div className="balance-settlement-parties">
-                <b>{memberName(t.from)}</b> owes <b>{memberName(t.to)}</b>
+                {t.from === user.id ? (
+                  <>You owe <b>{memberName(t.to)}</b></>
+                ) : t.to === user.id ? (
+                  <><b>{memberName(t.from)}</b> owes you</>
+                ) : (
+                  <><b>{memberName(t.from)}</b> owes <b>{memberName(t.to)}</b></>
+                )}
               </div>
               <div className="balance-settlement-amount">{money(t.amount, baseCurrency)}</div>
               {(() => {
@@ -788,9 +794,9 @@ function BalancesTab({ group, expenses, settlements, balData, user, memberName, 
                   <div className="balance-settlement-actions">
                     {related.map((settlement) => settlement.status === "reported_problem" ? (
                       <div className="balance-payment-status" key={settlement.id}>
-                        <span className="pill pill-coral">Payment issue · {money(settlement.amount, baseCurrency)}</span>
+                        <span className="pill pill-coral balance-issue-pill">Not received · {money(settlement.amount, baseCurrency)}</span>
                         {t.from === user.id && (
-                          <button className="btn-ghost" onClick={() => onReview(settlement)}>Review payment</button>
+                          <button className="btn-ghost balance-review-button" onClick={() => onReview(settlement)}>Review payment</button>
                         )}
                       </div>
                     ) : (
@@ -799,7 +805,7 @@ function BalancesTab({ group, expenses, settlements, balData, user, memberName, 
                       </span>
                     ))}
                     {t.from === user.id && remainingToSettle > 0.009 && (
-                      <button className="btn-ghost" onClick={() => onSettle(t.from, t.to, remainingToSettle)}>
+                      <button className="btn-ghost balance-settle-button" onClick={() => onSettle(t.from, t.to, remainingToSettle)}>
                         Settle {money(remainingToSettle, baseCurrency)}
                       </button>
                     )}
