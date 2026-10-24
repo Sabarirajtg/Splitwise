@@ -1106,3 +1106,83 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+
+/* Responsive settle-up layout: separate parties, amount and payment actions. */
+.balance-settlement-row {
+  display: grid;
+  grid-template-columns: 38px minmax(150px, 1fr) auto;
+  grid-template-areas:
+    "avatar parties amount"
+    ". actions actions";
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 10px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--border);
+}
+.balance-settlement-row:last-child { border-bottom: 0; }
+.balance-settlement-avatar { grid-area: avatar; }
+.balance-settlement-parties {
+  grid-area: parties;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.balance-settlement-amount {
+  grid-area: amount;
+  justify-self: end;
+  min-width: max-content;
+  white-space: nowrap;
+  text-align: right;
+  font-size: clamp(16px, 2vw, 22px);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.balance-settlement-actions {
+  grid-area: actions;
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+}
+.balance-payment-status {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.balance-settlement-actions .pill {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.balance-settlement-actions .btn-ghost {
+  flex: 0 0 auto;
+  max-width: 100%;
+  white-space: normal;
+}
+@media (max-width: 620px) {
+  .balance-settlement-row {
+    grid-template-columns: 36px minmax(0, 1fr);
+    grid-template-areas:
+      "avatar parties"
+      ". amount"
+      ". actions";
+    column-gap: 10px;
+    row-gap: 8px;
+  }
+  .balance-settlement-amount {
+    justify-self: start;
+    text-align: left;
+    font-size: 18px;
+  }
+  .balance-settlement-actions,
+  .balance-payment-status {
+    align-items: flex-start;
+  }
+}

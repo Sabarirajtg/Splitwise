@@ -253,7 +253,10 @@ export default function GroupDetail() {
     );
   }
 
-  const memberName = (uid) => (group.members.find(m => m.id === uid) || {}).name || "?";
+  const memberName = (uid) => {
+    if (uid === user.id) return "You";
+    return (group.members.find((member) => member.id === uid) || {}).name || "?";
+  };
   const groupPendingSettlements = settlements.filter((settlement) => settlement.status !== "settled" && (settlement.from === user.id || settlement.to === user.id));
 
   return (
@@ -509,7 +512,7 @@ function ExpensesOverview({ group, expenses, user }) {
 
   const categoryData = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]);
   const memberData = group.members
-    .map((member) => ({ label: member.name, value: memberTotals[member.id] || 0, id: member.id }))
+    .map((member) => ({ label: member.id === user.id ? "You" : member.name, value: memberTotals[member.id] || 0, id: member.id }))
     .sort((a, b) => b.value - a.value);
   const dateData = Object.entries(dateTotals).sort((a, b) => a[0].localeCompare(b[0])).slice(-14);
   const totalGroupExpense = expenses.reduce((total, expense) => total + (Number(expense.amountInBase ?? expense.amount) || 0), 0);
@@ -735,7 +738,7 @@ function GroupSettings({
                 {initials(member.name)}
               </div>
               <div style={{ flex: 1, fontSize: 13.5 }}>
-                {member.name}
+                {member.id === user.id ? "You" : member.name}
               </div>
               <span
                 className={`pill ${
@@ -761,12 +764,12 @@ function BalancesTab({ group, expenses, settlements, balData, user, memberName, 
         {simplified.length === 0
           ? <p className="muted small">Everyone is settled up 🎉</p>
           : simplified.map((t, i) => (
-            <div className="split-row" key={i}>
-              <div className="avatar" style={{ background: avatarColor(t.from) }}>{initials(memberName(t.from))}</div>
-              <div style={{ flex: 1, fontSize: 13.5 }}>
+            <div className="balance-settlement-row" key={i}>
+              <div className="avatar balance-settlement-avatar" style={{ background: avatarColor(t.from) }}>{initials((group.members.find((member) => member.id === t.from) || {}).name || memberName(t.from))}</div>
+              <div className="balance-settlement-parties">
                 <b>{memberName(t.from)}</b> owes <b>{memberName(t.to)}</b>
               </div>
-              <div style={{ fontWeight: 700 }}>{money(t.amount, baseCurrency)}</div>
+              <div className="balance-settlement-amount">{money(t.amount, baseCurrency)}</div>
               {(() => {
                 const related = settlements.filter((settlement) =>
                   settlement.status !== "settled" &&
@@ -864,7 +867,7 @@ function BalancesTab({ group, expenses, settlements, balData, user, memberName, 
           return (
             <div className="split-row" key={m.id}>
               <div className="avatar" style={{ background: avatarColor(m.id) }}>{initials(m.name)}</div>
-              <div style={{ flex: 1, fontSize: 13.5 }}>{m.name}</div>
+              <div style={{ flex: 1, fontSize: 13.5 }}>{m.id === user.id ? "You" : m.name}</div>
               {pill}
             </div>
           );
@@ -1226,7 +1229,11 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
         <div className="field">
           <label>Paid by</label>
           <select value={paidBy} onChange={e => setPaidBy(e.target.value)}>
-            {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {members.map(m => (
+              <option key={m.id} value={m.id}>
+                {m.id === user.id ? `You (${m.name})` : m.name}
+              </option>
+            ))}
           </select>
         </div>
         <div className="field">
@@ -1257,7 +1264,7 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
               <div className="split-row" key={m.id}>
                 <input type="checkbox" checked={included} onChange={() => toggleMember(m.id)} style={{ width: "auto" }} />
                 <div className="avatar" style={{ background: avatarColor(m.id) }}>{initials(m.name)}</div>
-                <div style={{ flex: 1, fontSize: 13.5 }}>{m.name}</div>
+                <div style={{ flex: 1, fontSize: 13.5 }}>{m.id === user.id ? `You (${m.name})` : m.name}</div>
                 {splitMethod === "equal" && (
                   <span className="small muted" style={{ width: 74, textAlign: "right" }}>
                     {included && includedIds.length > 0 ? money(amt / includedIds.length, currency) : ""}
