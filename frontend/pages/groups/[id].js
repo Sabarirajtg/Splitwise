@@ -773,28 +773,40 @@ function BalancesTab({ group, expenses, settlements, balData, user, memberName, 
                   settlement.from === t.from &&
                   settlement.to === t.to
                 );
-                const reportedProblem = related.find((settlement) => settlement.status === "reported_problem");
-                if (reportedProblem) {
-                  return (
-                    <>
-                      <span className="pill pill-coral">Payment issue · {money(reportedProblem.amount, baseCurrency)}</span>
-                      {t.from === user.id && (
-                        <button className="btn-ghost" onClick={() => onReview(reportedProblem)}>Review payment</button>
-                      )}
-                    </>
-                  );
-                }
-                const awaiting = related.find((settlement) => settlement.status === "pending_confirmation");
-                if (awaiting) {
-                  return (
-                    <span className="pill pill-amber">
-                      {money(awaiting.amount, baseCurrency)} payment awaiting confirmation
-                    </span>
-                  );
-                }
-                return t.from === user.id
-                  ? <button className="btn-ghost" onClick={() => onSettle(t.from, t.to, t.amount)}>Settle</button>
-                  : null;
+                const unresolvedAmount = Math.round(related.reduce(
+                  (total, settlement) => total + Number(settlement.amount || 0), 0
+                ) * 100) / 100;
+                const remainingToSettle = Math.max(
+                  0,
+                  Math.round((Number(t.amount) - unresolvedAmount) * 100) / 100
+                );
+
+                return (
+                  <div className="balance-settlement-actions">
+                    {related.map((settlement) => settlement.status === "reported_problem" ? (
+                      <div className="balance-payment-status" key={settlement.id}>
+                        <span className="pill pill-coral">Payment issue · {money(settlement.amount, baseCurrency)}</span>
+                        {t.from === user.id && (
+                          <button className="btn-ghost" onClick={() => onReview(settlement)}>Review payment</button>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="pill pill-amber" key={settlement.id}>
+                        {money(settlement.amount, baseCurrency)} awaiting confirmation
+                      </span>
+                    ))}
+                    {t.from === user.id && remainingToSettle > 0.009 && (
+                      <button className="btn-ghost" onClick={() => onSettle(t.from, t.to, remainingToSettle)}>
+                        Settle {money(remainingToSettle, baseCurrency)}
+                      </button>
+                    )}
+                    {t.from === user.id && related.length === 0 && (
+                      <button className="btn-ghost" onClick={() => onSettle(t.from, t.to, t.amount)}>
+                        Settle {money(t.amount, baseCurrency)}
+                      </button>
+                    )}
+                  </div>
+                );
               })()}
             </div>
           ))}
