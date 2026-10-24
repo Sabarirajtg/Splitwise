@@ -624,7 +624,13 @@ app.post("/api/invitations/:token/join", async (req, res) => {
 
 // ---------- Expenses ----------
 app.get("/api/groups/:id/expenses", async (req, res) => {
-  const expenses = await Expense.find({ groupId: req.params.id }).sort({ date: -1 });
+  // The editable expense date can be earlier than the moment it was entered.
+  // Creation time defines newest-added-first order; date is only a fallback.
+  const expenses = await Expense.find({ groupId: req.params.id }).sort({
+    createdAt: -1,
+    date: -1,
+    _id: -1
+  });
   res.json(expenses.map(mapExpense));
 });
 
@@ -632,6 +638,7 @@ function mapExpense(e) {
   return {
     id: e._id, groupId: e.groupId, desc: e.desc, amount: e.amount, currency: e.currency,
     amountInBase: e.amountInBase, fxRate: e.fxRate, paidBy: e.paidBy, splits: e.splits, createdBy: e.createdBy || null, date: e.date,
+    createdAt: e.createdAt || null, updatedAt: e.updatedAt || null,
     recurring: e.recurring, splitMethod: e.splitMethod, lastGenerated: e.lastGenerated
   };
 }
@@ -742,13 +749,33 @@ app.post("/api/groups/:id/recurring/process", async (req, res) => {
 
 // ---------- Settlements & balances ----------
 app.get("/api/groups/:id/settlements", async (req, res) => {
-  const settlements = await Settlement.find({ groupId: req.params.id }).sort({ createdAt: -1, date: -1 });
-  res.json(settlements.map(s => ({ id: s._id, groupId: s.groupId, from: s.from, to: s.to, amount: s.amount, currency: s.currency, date: s.date, status: s.status || "settled", reportedBy: s.reportedBy || null, confirmedBy: s.confirmedBy || null, reportedAt: s.reportedAt || s.createdAt || null, confirmedAt: s.confirmedAt || null, issueNote: s.issueNote || null })));
+  const settlements = await Settlement.find({ groupId: req.params.id }).sort({
+    updatedAt: -1,
+    createdAt: -1,
+    date: -1
+  });
+  res.json(settlements.map(s => ({
+    id: s._id,
+    groupId: s.groupId,
+    from: s.from,
+    to: s.to,
+    amount: s.amount,
+    currency: s.currency,
+    date: s.date,
+    status: s.status || "settled",
+    reportedBy: s.reportedBy || null,
+    confirmedBy: s.confirmedBy || null,
+    reportedAt: s.reportedAt || s.createdAt || null,
+    confirmedAt: s.confirmedAt || null,
+    createdAt: s.createdAt || null,
+    updatedAt: s.updatedAt || null,
+    issueNote: s.issueNote || null
+  })));
 });
 
 app.post("/api/groups/:id/settlements", async (req, res) => {
   if (!requireInternal(req, res)) return;
-  const { from, to, amount, currency, userId, existingSettlementId } = req.body || {};
+  const { from, to, amount, currency, userId, existingSettlementId, date: requestedDate } = req.body || {};
   const group = await Group.findById(req.params.id);
   if (!group) return res.status(404).json({ error: "Group not found" });
   if (!userId || !isGroupMember(group, userId)) return res.status(403).json({ error: "Only group members can mark payments" });
@@ -814,7 +841,7 @@ app.post("/api/groups/:id/settlements", async (req, res) => {
     to,
     amount: roundedAmount,
     currency,
-    date: now.toISOString().slice(0, 10),
+    date: requestedDate || now.toISOString().slice(0, 10),
     status: "pending_confirmation",
     reportedBy: userId,
     reportedAt: now

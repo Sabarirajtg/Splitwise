@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { api, getSession, money, initials, todayISO, CURRENCIES } from "../../lib/api";
 import { avatarColor } from "../../lib/colors";
@@ -28,6 +28,7 @@ export default function GroupDetail() {
   const [upiDraft, setUpiDraft] = useState("");
   const [savingUpi, setSavingUpi] = useState(false);
   const [upiPromptDismissed, setUpiPromptDismissed] = useState(false);
+  const refreshPromiseRef = useRef(null);
 
   useEffect(() => {
     const session = getSession();
@@ -39,40 +40,78 @@ export default function GroupDetail() {
     if (user && id) loadAll();
   }, [user, id]);
 
-  // Keep pending payment updates visible if the recipient already has a group open.
+  // Refresh the entire group view while it is open so changes made by other
+  // members appear automatically without a manual page refresh. Pause polling
+  // when the tab is hidden, then refresh immediately on focus/visibility restore.
   useEffect(() => {
     if (!user || !id) return undefined;
     let active = true;
-    async function refreshSettlements() {
-      try {
-        const latest = await api.groupSettlements(id);
-        if (active) setSettlements(Array.isArray(latest) ? latest : []);
-      } catch {
-        // Leave the last rendered state in place during transient network errors.
-      }
+
+    async function refreshVisibleGroup() {
+      if (!active || document.visibilityState !== "visible") return;
+      await refreshGroupData();
     }
+
     function onVisibilityChange() {
-      if (document.visibilityState === "visible") refreshSettlements();
+      if (document.visibilityState === "visible") refreshVisibleGroup();
     }
-    window.addEventListener("focus", refreshSettlements);
+
+    window.addEventListener("focus", refreshVisibleGroup);
     document.addEventListener("visibilitychange", onVisibilityChange);
-    const intervalId = window.setInterval(refreshSettlements, 30000);
+    const intervalId = window.setInterval(refreshVisibleGroup, 5000);
     return () => {
       active = false;
-      window.removeEventListener("focus", refreshSettlements);
+      window.removeEventListener("focus", refreshVisibleGroup);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.clearInterval(intervalId);
     };
   }, [user, id]);
 
-  async function loadAll() {
-    try { await api.processRecurring(id); } catch (e) { showToast(e.message || "Could not process recurring expenses", "error"); }
+  async function refreshGroupData({ showError = false } = {}) {
+    if (refreshPromiseRef.current) return refreshPromiseRef.current;
+
+    const refreshPromise = (async () => {
+      try {
+        const [g, exps, setl, bal] = await Promise.all([
+          api.getGroup(id),
+          api.groupExpenses(id),
+          api.groupSettlements(id),
+          api.balances(id)
+        ]);
+        setGroup(g);
+        setExpenses(Array.isArray(exps) ? exps : []);
+        setSettlements(Array.isArray(setl) ? setl : []);
+        setBalData(bal);
+        return g;
+      } catch (error) {
+        if (showError) showToast(error.message || "Could not load group data", "error");
+        return null;
+      }
+    })();
+
+    refreshPromiseRef.current = refreshPromise;
     try {
-      const [g, exps, setl, bal] = await Promise.all([api.getGroup(id), api.groupExpenses(id), api.groupSettlements(id), api.balances(id)]);
-      setGroup(g); setExpenses(exps); setSettlements(setl); setBalData(bal);
-      setSettings({ baseCurrency: g.baseCurrency, spendingCurrency: g.spendingCurrency || g.baseCurrency });
+      return await refreshPromise;
+    } finally {
+      if (refreshPromiseRef.current === refreshPromise) refreshPromiseRef.current = null;
+    }
+  }
+
+  async function loadAll() {
+    try {
+      await api.processRecurring(id);
+    } catch (error) {
+      showToast(error.message || "Could not process recurring expenses", "error");
+    }
+
+    const g = await refreshGroupData({ showError: true });
+    if (g) {
+      setSettings({
+        baseCurrency: g.baseCurrency,
+        spendingCurrency: g.spendingCurrency || g.baseCurrency
+      });
       if (!g.currencyConfigured) setSheet("settings");
-    } catch (e) { showToast(e.message || "Could not load group data", "error"); }
+    }
   }
 
   async function saveSettings() {
@@ -139,7 +178,7 @@ export default function GroupDetail() {
     const isRetry = Boolean(settleDraft.existingSettlementId);
     setSettlementAction("mark-paid");
     try {
-      await api.recordSettlement(id, { ...settleDraft, userId: user.id });
+      await api.recordSettlement(id, { ...settleDraft, userId: user.id, date: settleDraft.date || todayISO() });
       setSheet(null);
       setSettleDraft(null);
       await loadAll();
@@ -333,7 +372,9 @@ export default function GroupDetail() {
         {tab === "expenses" && (
           expenses.length === 0
             ? <div className="empty">No expenses yet.<br />Tap + to add one.</div>
-            : expenses.map(e => {
+            : [...expenses].sort((a, b) =>
+                getRecordTimestamp(b.createdAt, b.date) - getRecordTimestamp(a.createdAt, a.date)
+              ).map(e => {
               const paidByMe = e.paidBy === user.id;
               const mySplit = (e.splits.find(s => s.userId === user.id) || { amount: 0 }).amount;
               let sub;
@@ -947,11 +988,42 @@ function BalancesTab({ group, expenses, settlements, balData, user, memberName, 
   );
 }
 
+function getRecordTimestamp(timestamp, fallbackDate) {
+  if (timestamp) {
+    const parsed = Date.parse(timestamp);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  if (fallbackDate) {
+    const parsed = Date.parse(`${fallbackDate}T00:00:00.000Z`);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
 function ActivityTab({ expenses, settlements, memberName, user }) {
   const items = [
-    ...expenses.map(e => ({ type: "expense", date: e.date, e })),
-    ...settlements.map(s => ({ type: "settle", date: s.date, s }))
-  ].sort((a, b) => b.date.localeCompare(a.date));
+    ...expenses.map((expense) => ({
+      type: "expense",
+      date: expense.date,
+      sortAt: getRecordTimestamp(expense.createdAt, expense.date),
+      id: expense.id,
+      e: expense
+    })),
+    ...settlements.map((settlement) => {
+      const statusTimestamp = settlement.status === "settled"
+        ? settlement.confirmedAt || settlement.updatedAt || settlement.createdAt
+        : settlement.status === "reported_problem"
+          ? settlement.reportedAt || settlement.updatedAt || settlement.createdAt
+          : settlement.updatedAt || settlement.createdAt;
+      return {
+        type: "settle",
+        date: settlement.date,
+        sortAt: getRecordTimestamp(statusTimestamp, settlement.date),
+        id: settlement.id,
+        s: settlement
+      };
+    })
+  ].sort((a, b) => b.sortAt - a.sortAt || String(b.id).localeCompare(String(a.id)));
   if (items.length === 0) return <div className="empty">No activity yet.</div>;
   return (
     <div className="card">
