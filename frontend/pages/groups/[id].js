@@ -448,7 +448,7 @@ function PendingSettlementPanel({ settlements, user, memberName, currency, onCon
               {!isProblem && <LoadingButton className="pending-problem-button" loading={loadingAction === `${settlement.id}:report`} disabled={Boolean(loadingAction)} onClick={() => onReportProblem(settlement.id)}>Not received</LoadingButton>}
             </div>}
             {!isRecipient && isProblem && <div className="pending-payment-actions">
-              <button className="btn-primary pending-confirm-button" disabled={Boolean(loadingAction)} onClick={() => onReview(settlement)}>Review / pay again</button>
+              <button className="btn-primary pending-confirm-button" disabled={Boolean(loadingAction)} onClick={() => onReview(settlement)}>Review / Try again</button>
             </div>}
           </div>
         );
@@ -473,7 +473,7 @@ function PaymentSheet({ group, draft, onMarkPaid, onClose, loading, disabled }) 
         <p className="chart-eyebrow">SETTLEMENT</p>
         <h2 style={{ marginBottom: 6 }}>{draft.existingSettlementId ? "Review payment to " : "Pay "}{recipient ? recipient.name : "group member"}</h2>
         <p className="muted small">{draft.existingSettlementId
-          ? "The recipient reported that this payment was not received. Review this original amount; if you pay again, resubmit this same payment for confirmation."
+          ? "The recipient reported that this payment was not received. Review this original amount; if you try again, resubmit this same payment for confirmation."
           : "Once you have made the transfer, mark it as paid. The recipient can confirm when they are next in SplitShare."}</p>
         <div className="payment-amount-card"><span className="small muted">Amount to pay</span><strong>{money(draft.amount, draft.currency)}</strong>{canUseUpi && <span className="small muted">UPI ID · {recipient.upiId}</span>}</div>
         {canUseUpi ? <button className="btn-primary" onClick={openUpi}>Pay with UPI</button> : <p className="payment-hint">{draft.currency !== "INR" ? "UPI links are available for INR settlements. You can still pay another way." : "This person has not added a UPI ID yet. You can still pay them another way."}</p>}
@@ -859,7 +859,7 @@ function BalancesTab({ group, expenses, settlements, balData, user, memberName, 
                       <p>
                         {related.length > 0
                           ? "Excludes the payment update(s) shown above."
-                          : "Settle this amount to clear the balance."}
+                          : ""}
                       </p>
                     </div>
                     <strong className="balance-remaining-amount">
