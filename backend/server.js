@@ -748,15 +748,51 @@ app.get("/api/groups/:id/settlements", async (req, res) => {
 
 app.post("/api/groups/:id/settlements", async (req, res) => {
   if (!requireInternal(req, res)) return;
-  const { from, to, amount, currency, userId } = req.body || {};
+  const { from, to, amount, currency, userId, existingSettlementId } = req.body || {};
   const group = await Group.findById(req.params.id);
   if (!group) return res.status(404).json({ error: "Group not found" });
-  if (!userId || userId !== from || !isGroupMember(group, userId)) return res.status(403).json({ error: "Only the person paying can mark this payment as paid" });
+  if (!userId || !isGroupMember(group, userId)) return res.status(403).json({ error: "Only group members can mark payments" });
+
+  // A retry reuses the disputed transaction rather than creating a new amount.
+  // This keeps payments separate from expenses recorded after the first attempt.
+  if (existingSettlementId) {
+    const existing = await Settlement.findOne({ _id: existingSettlementId, groupId: group._id });
+    if (!existing) return res.status(404).json({ error: "Payment report not found" });
+    if (existing.from !== userId || from !== userId || existing.to !== to) {
+      return res.status(403).json({ error: "Only the original payer can retry this payment" });
+    }
+    if (existing.status !== "reported_problem") {
+      return res.status(409).json({ error: "Only a reported payment issue can be retried" });
+    }
+
+    existing.status = "pending_confirmation";
+    existing.reportedBy = userId;
+    existing.reportedAt = new Date();
+    existing.confirmedBy = null;
+    existing.confirmedAt = null;
+    existing.issueNote = null;
+    await existing.save();
+    await notifySettlement(group, existing, existing.to, existing.from, "paid")
+      .catch((error) => console.error("Payment retry notification failed:", error.message));
+    return res.json({
+      id: existing._id,
+      groupId: existing.groupId,
+      from: existing.from,
+      to: existing.to,
+      amount: existing.amount,
+      currency: existing.currency,
+      date: existing.date,
+      status: existing.status,
+      reportedAt: existing.reportedAt
+    });
+  }
+
+  if (!from || userId !== from) return res.status(403).json({ error: "Only the person paying can mark this payment as paid" });
   if (!to || to === from || !isGroupMember(group, to)) return res.status(400).json({ error: "Choose a valid recipient in this group" });
   if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) return res.status(400).json({ error: "Enter a valid payment amount" });
   if (currency !== group.baseCurrency) return res.status(400).json({ error: "Settlement amount must use the group base currency" });
   const existingPending = await Settlement.findOne({ groupId: group._id, from, to, status: { $in: ["pending_confirmation", "reported_problem"] } });
-  if (existingPending) return res.status(409).json({ error: "There is already a payment waiting for confirmation between these members" });
+  if (existingPending) return res.status(409).json({ error: "There is already a payment awaiting confirmation or review between these members" });
   const now = new Date();
   const s = await Settlement.create({ _id: nanoid(10), groupId: group._id, from, to, amount: Math.round(Number(amount) * 100) / 100, currency, date: now.toISOString().slice(0, 10), status: "pending_confirmation", reportedBy: userId, reportedAt: now });
   await notifySettlement(group, s, to, from, "paid").catch((error) => console.error("Payment notification failed:", error.message));

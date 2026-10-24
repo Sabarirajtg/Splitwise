@@ -251,6 +251,7 @@ export default function Groups() {
       {sheet === "new" && (
         <div className="overlay" onClick={e => e.target === e.currentTarget && setSheet(null)}>
           <div className="sheet">
+            <button type="button" className="sheet-close-button" aria-label="Close new group dialog" onClick={() => setSheet(null)} disabled={busy}>×</button>
             <div className="sheet-handle" />
             <h3 style={{ marginBottom: 16 }}>New group</h3>
             <div className="field">
