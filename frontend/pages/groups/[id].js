@@ -800,11 +800,6 @@ function BalancesTab({ group, expenses, settlements, balData, user, memberName, 
                         Settle {money(remainingToSettle, baseCurrency)}
                       </button>
                     )}
-                    {t.from === user.id && related.length === 0 && (
-                      <button className="btn-ghost" onClick={() => onSettle(t.from, t.to, t.amount)}>
-                        Settle {money(t.amount, baseCurrency)}
-                      </button>
-                    )}
                   </div>
                 );
               })()}
