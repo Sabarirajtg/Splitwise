@@ -1366,7 +1366,7 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
     }
     loadConversionRate();
     return () => { cancelled = true; };
-  }, [currency, group.baseCurrency, group.cashFxRates, paymentMethod, editing]);
+  }, [currency, group.baseCurrency, paymentMethod, editing?.id, editing?.currency, editing?.paymentMethod, editing?.fxRate]);
 
   function toggleMember(uid) {
     setIncludedIds(prev => prev.includes(uid) ? prev.filter(x => x !== uid) : [...prev, uid]);
