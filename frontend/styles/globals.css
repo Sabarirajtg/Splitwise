@@ -240,6 +240,211 @@ h1, h2, h3 { font-weight: 700; margin: 0; }
   color: transparent;
 }
 
+.payment-method-section {
+  margin: 8px 0 20px;
+  min-width: 0;
+}
+.payment-section-heading {
+  margin: 0 0 12px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+.payment-method-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+.payment-method-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+  min-height: 116px;
+  padding: 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 17px;
+  background: var(--card);
+  color: var(--text);
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.payment-method-option.is-selected {
+  border-color: var(--purple);
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, .10);
+  background: var(--card);
+}
+.payment-method-icon {
+  display: inline-flex;
+  align-items: center;
+  min-height: 23px;
+  font-size: 22px;
+  line-height: 1;
+}
+.payment-method-name {
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.25;
+}
+.payment-method-description {
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 450;
+  line-height: 1.4;
+}
+.cash-rate-card {
+  min-width: 0;
+  margin: 0 0 20px;
+  padding: 16px;
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  background: var(--card);
+}
+.cash-rate-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin-bottom: 16px;
+}
+.cash-rate-icon {
+  flex: 0 0 auto;
+  font-size: 27px;
+  line-height: 1;
+}
+.cash-rate-title-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cash-rate-title-wrap h4,
+.cash-rate-total h4 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 750;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.cash-rate-title-wrap p,
+.cash-rate-total p {
+  margin: 5px 0 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.payment-method-badge {
+  flex: 0 0 auto;
+  max-width: 30%;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.payment-method-badge.cash {
+  background: rgba(59, 130, 246, .12);
+  color: #3b82f6;
+}
+.payment-method-badge.digital {
+  background: rgba(139, 92, 246, .12);
+  color: var(--purple);
+}
+.cash-rate-label {
+  display: block;
+  margin: 0 0 8px;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.cash-rate-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 54px;
+  padding: 0 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 15px;
+  background: var(--bg);
+}
+.cash-rate-input-wrap:focus-within {
+  border-color: var(--purple);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, .13);
+}
+.cash-rate-input {
+  flex: 1 1 auto;
+  width: 0;
+  min-width: 0;
+  margin: 0 !important;
+  padding: 12px 0 !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.cash-rate-input:read-only {
+  cursor: default;
+}
+.cash-rate-currency {
+  flex: 0 0 auto;
+  color: var(--text-2);
+  font-size: 14px;
+}
+.cash-rate-help {
+  margin: 12px 0 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.cash-rate-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.cash-rate-total > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cash-rate-total strong {
+  flex: 0 1 auto;
+  max-width: 55%;
+  color: var(--text);
+  font-size: clamp(17px, 4vw, 22px);
+  line-height: 1.3;
+  text-align: right;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 380px) {
+  .payment-method-options { gap: 7px; }
+  .payment-method-option { min-height: 112px; padding: 11px; }
+  .payment-method-name { font-size: 14px; }
+  .payment-method-description { font-size: 11px; }
+  .cash-rate-card { padding: 13px; }
+  .cash-rate-card-heading { gap: 8px; }
+  .cash-rate-title-wrap h4 { font-size: 15px; }
+  .payment-method-badge { font-size: 11px; padding: 4px 7px; }
+  .cash-rate-total { align-items: flex-start; }
+}
+
 .currency-select{display:grid;gap:6px;min-width:0}.toast{position:fixed;z-index:100;top:max(16px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);width:min(92vw,420px);display:flex;align-items:center;gap:10px;padding:13px 15px;border-radius:12px;box-shadow:0 8px 28px rgba(36,29,51,.18);background:var(--card);border:1px solid var(--border);font-size:14px}.toast-success>span:first-child{color:var(--teal);font-weight:800}.toast-error>span:first-child{color:var(--coral-dark);font-weight:800}.toast button{margin-left:auto;border:0;padding:2px 6px;background:transparent;font-size:20px}.skeleton{background:linear-gradient(90deg,#eee8f5 25%,#f8f5fb 37%,#eee8f5 63%);background-size:400% 100%;animation:skeleton-shimmer 1.4s ease infinite;border-radius:8px}.skeleton-card{height:88px;margin-bottom:14px;border:1px solid var(--border);border-radius:var(--radius)}@keyframes skeleton-shimmer{0%{background-position:100% 0}100%{background-position:0 0}}@media(prefers-reduced-motion:reduce){.skeleton{animation:none}}.currency-breakdown{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.member-bar-row{display:grid;grid-template-columns:minmax(76px,120px) 1fr auto;gap:10px;align-items:center;margin:12px 0;font-size:13px}.member-bar-track{height:12px;background:var(--purple-light);border-radius:99px;overflow:hidden}.member-bar-fill{height:100%;background:var(--gradient);border-radius:99px}
 
 /* CRED-inspired SplitShare visual refresh */
