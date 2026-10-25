@@ -1096,18 +1096,18 @@ function ActivityTab({ expenses, settlements, memberName, user }) {
   return (
     <div className="card activity-feed">
       {items.map((item) => item.type === "expense" ? (
-        <div className="split-row activity-item" key={item.id}>
+        <div className="split-row activity-item activity-expense" key={item.id}>
           <span className="activity-item-icon" aria-hidden="true">{expenseIcon(item.e.desc)}</span>
           <div className="activity-item-content">
             <div className="activity-item-description">
               {memberName(item.e.paidBy)} added <b>{item.e.desc}</b>
-              <span className="activity-expense-amount"> · {money(item.e.amount, item.e.currency)}</span>
             </div>
             <ActivityTimestamp timestamp={item.occurredAt} fallbackDate={item.e.date} />
           </div>
+          <div className="activity-item-amount">{money(item.e.amount, item.e.currency)}</div>
         </div>
       ) : (
-        <div className="split-row activity-item" key={item.id}>
+        <div className={`split-row activity-item activity-settlement ${item.s.status === "settled" ? "is-settled" : item.s.status === "reported_problem" ? "has-problem" : "is-pending"}`} key={item.id}>
           <span className="activity-item-icon" aria-hidden="true">
             {item.s.status === "settled" ? "✅" : item.s.status === "reported_problem" ? "⚠️" : "⏳"}
           </span>
