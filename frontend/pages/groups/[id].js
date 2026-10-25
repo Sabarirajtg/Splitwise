@@ -1035,15 +1035,10 @@ function localCalendarKey(date) {
   return `${year}-${month}-${day}`;
 }
 
-function ActivityTimestamp({ timestamp, expenseDate }) {
+function ActivityTimestamp({ timestamp, fallbackDate }) {
   const formattedTimestamp = formatActivityTimestamp(timestamp);
-  const hasDifferentExpenseDate = (() => {
-    if (!expenseDate || !timestamp) return false;
-    const eventDate = new Date(timestamp);
-    return Number.isFinite(eventDate.getTime()) && localCalendarKey(eventDate) !== expenseDate;
-  })();
-  const formattedExpenseDate = hasDifferentExpenseDate
-    ? formatActivityCalendarDate(expenseDate)
+  const formattedFallbackDate = !formattedTimestamp && fallbackDate
+    ? formatActivityCalendarDate(fallbackDate)
     : null;
 
   return (
@@ -1052,16 +1047,9 @@ function ActivityTimestamp({ timestamp, expenseDate }) {
         <time className="activity-event-time" dateTime={timestamp}>
           {formattedTimestamp}
         </time>
-      ) : expenseDate ? (
-        <span className="activity-event-time">
-          {formatActivityCalendarDate(expenseDate)}
-        </span>
+      ) : formattedFallbackDate ? (
+        <span className="activity-event-time">{formattedFallbackDate}</span>
       ) : null}
-      {formattedExpenseDate && (
-        <span className="activity-expense-date">
-          Expense date: {formattedExpenseDate}
-        </span>
-      )}
     </div>
   );
 }
@@ -1104,7 +1092,7 @@ function ActivityTab({ expenses, settlements, memberName, user }) {
             <div className="activity-item-description">
               {memberName(item.e.paidBy)} added <b>{item.e.desc}</b>
             </div>
-            <ActivityTimestamp timestamp={item.occurredAt} expenseDate={item.e.date} />
+            <ActivityTimestamp timestamp={item.occurredAt} fallbackDate={item.e.date} />
           </div>
         </div>
       ) : (
@@ -1338,21 +1326,47 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
   const [error, setError] = useState("");
   const [busyAction, setBusyAction] = useState(null);
   const busy = Boolean(busyAction);
-  const [fxPreview, setFxPreview] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState(editing ? (editing.paymentMethod || "digital") : "cash");
+  const [conversionRate, setConversionRate] = useState(() => {
+    if (editing && editing.currency !== group.baseCurrency && editing.fxRate) return String(editing.fxRate);
+    const key = `${editing ? editing.currency : (group.spendingCurrency || group.baseCurrency)}_${group.baseCurrency}`;
+    return group.cashFxRates && group.cashFxRates[key] ? String(group.cashFxRates[key]) : "";
+  });
+  const [rateLoading, setRateLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    async function loadFx() {
-      if (currency === group.baseCurrency || !amount) { setFxPreview(null); return; }
+    async function loadConversionRate() {
+      if (currency === group.baseCurrency) {
+        setConversionRate("1");
+        return;
+      }
+      const pairKey = `${currency}_${group.baseCurrency}`;
+      const savedRate = group.cashFxRates && group.cashFxRates[pairKey];
+      const editingRate = editing && editing.currency === currency && editing.paymentMethod === "cash" && editing.fxRate;
+      if (paymentMethod === "cash" && editingRate) {
+        setConversionRate(String(editingRate));
+        return;
+      }
+      if (paymentMethod === "cash" && savedRate) {
+        setConversionRate(String(savedRate));
+        return;
+      }
+      setRateLoading(true);
       try {
         const { rates } = await api.fx(currency);
         const rate = rates[group.baseCurrency];
-        if (rate && !cancelled) setFxPreview(Math.round(parseFloat(amount) * rate * 100) / 100);
-      } catch { if (!cancelled) setFxPreview(null); }
+        if (!cancelled && rate) setConversionRate(String(rate));
+        if (!cancelled && !rate) setConversionRate("");
+      } catch {
+        if (!cancelled) setConversionRate("");
+      } finally {
+        if (!cancelled) setRateLoading(false);
+      }
     }
-    loadFx();
+    loadConversionRate();
     return () => { cancelled = true; };
-  }, [currency, amount, group.baseCurrency]);
+  }, [currency, group.baseCurrency, group.cashFxRates, paymentMethod, editing]);
 
   function toggleMember(uid) {
     setIncludedIds(prev => prev.includes(uid) ? prev.filter(x => x !== uid) : [...prev, uid]);
@@ -1400,7 +1414,11 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
 
     setBusyAction("save");
     try {
-      const payload = { desc: desc.trim(), amount: Math.round(amt * 100) / 100, currency, paidBy, date, recurring: recurring || null, splitMethod, splits };
+      const payload = {
+        desc: desc.trim(), amount: Math.round(amt * 100) / 100, currency, paymentMethod,
+        ...(currency !== group.baseCurrency && paymentMethod === "cash" ? { fxRate: Number(conversionRate) } : {}),
+        paidBy, date, recurring: recurring || null, splitMethod, splits
+      };
       if (editing) { await api.updateExpense(editing.id, payload); showToast("Expense updated successfully!"); }
       else { await api.addExpense(group.id, payload); showToast("Expense added successfully!"); }
       onSaved();
@@ -1441,9 +1459,36 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
             </select>
           </div>
         </div>
-        {fxPreview != null && (
+        <div className="field">
+          <label>Payment method</label>
+          <div className="chiprow" role="group" aria-label="Payment method">
+            <button type="button" className={`chip ${paymentMethod === "cash" ? "selected" : ""}`} aria-pressed={paymentMethod === "cash"} onClick={() => setPaymentMethod("cash")}>Cash</button>
+            <button type="button" className={`chip ${paymentMethod === "digital" ? "selected" : ""}`} aria-pressed={paymentMethod === "digital"} onClick={() => setPaymentMethod("digital")}>Digital Payment</button>
+          </div>
+        </div>
+        {currency !== group.baseCurrency && paymentMethod === "cash" && (
+          <div className="field">
+            <label htmlFor="cash-conversion-rate">Cash conversion rate (1 {currency} = ? {group.baseCurrency})</label>
+            <input
+              id="cash-conversion-rate"
+              type="number"
+              inputMode="decimal"
+              min="0.000001"
+              step="any"
+              value={conversionRate}
+              onChange={e => setConversionRate(e.target.value)}
+              placeholder={rateLoading ? "Loading rate…" : "Enter conversion rate"}
+              aria-describedby="cash-conversion-rate-help"
+            />
+            <p id="cash-conversion-rate-help" className="small muted" style={{ marginTop: -8, marginBottom: 10 }}>
+              The last saved cash rate for this currency pair is prefilled; otherwise, the current exchange rate is used.
+            </p>
+          </div>
+        )}
+        {currency !== group.baseCurrency && conversionRate && Number(conversionRate) > 0 && amount && (
           <p className="small muted" style={{ marginTop: -8, marginBottom: 14 }}>
-            ≈ {money(fxPreview, group.baseCurrency)} at today's rate (group's currency is {group.baseCurrency})
+            ≈ {money(Math.round((parseFloat(amount) || 0) * Number(conversionRate) * 100) / 100, group.baseCurrency)}
+            {paymentMethod === "digital" ? " at today's rate" : " using cash rate"}
           </p>
         )}
         <div className="field">
