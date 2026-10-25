@@ -58,7 +58,7 @@ export default function GroupDetail() {
 
     window.addEventListener("focus", refreshVisibleGroup);
     document.addEventListener("visibilitychange", onVisibilityChange);
-    const intervalId = window.setInterval(refreshVisibleGroup, 5000);
+    const intervalId = window.setInterval(refreshVisibleGroup, 15000);
     return () => {
       active = false;
       window.removeEventListener("focus", refreshVisibleGroup);
@@ -1000,11 +1000,78 @@ function getRecordTimestamp(timestamp, fallbackDate) {
   return 0;
 }
 
+function formatActivityTimestamp(timestamp) {
+  if (!timestamp) return null;
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function formatActivityCalendarDate(dateValue) {
+  if (!dateValue) return null;
+  // Parse YYYY-MM-DD as a local calendar date, not UTC midnight.
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue);
+  const date = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(dateValue);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+  }).format(date);
+}
+
+function localCalendarKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function ActivityTimestamp({ timestamp, expenseDate }) {
+  const formattedTimestamp = formatActivityTimestamp(timestamp);
+  const hasDifferentExpenseDate = (() => {
+    if (!expenseDate || !timestamp) return false;
+    const eventDate = new Date(timestamp);
+    return Number.isFinite(eventDate.getTime()) && localCalendarKey(eventDate) !== expenseDate;
+  })();
+  const formattedExpenseDate = hasDifferentExpenseDate
+    ? formatActivityCalendarDate(expenseDate)
+    : null;
+
+  return (
+    <div className="activity-meta">
+      {formattedTimestamp ? (
+        <time className="activity-event-time" dateTime={timestamp}>
+          {formattedTimestamp}
+        </time>
+      ) : expenseDate ? (
+        <span className="activity-event-time">
+          {formatActivityCalendarDate(expenseDate)}
+        </span>
+      ) : null}
+      {formattedExpenseDate && (
+        <span className="activity-expense-date">
+          Expense date: {formattedExpenseDate}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function ActivityTab({ expenses, settlements, memberName, user }) {
   const items = [
     ...expenses.map((expense) => ({
       type: "expense",
       date: expense.date,
+      occurredAt: expense.createdAt || expense.updatedAt || null,
       sortAt: getRecordTimestamp(expense.createdAt, expense.date),
       id: expense.id,
       e: expense
@@ -1014,36 +1081,47 @@ function ActivityTab({ expenses, settlements, memberName, user }) {
         ? settlement.confirmedAt || settlement.updatedAt || settlement.createdAt
         : settlement.status === "reported_problem"
           ? settlement.reportedAt || settlement.updatedAt || settlement.createdAt
-          : settlement.updatedAt || settlement.createdAt;
+          : settlement.reportedAt || settlement.createdAt || settlement.updatedAt;
       return {
         type: "settle",
         date: settlement.date,
+        occurredAt: statusTimestamp || null,
         sortAt: getRecordTimestamp(statusTimestamp, settlement.date),
         id: settlement.id,
         s: settlement
       };
     })
   ].sort((a, b) => b.sortAt - a.sortAt || String(b.id).localeCompare(String(a.id)));
+
   if (items.length === 0) return <div className="empty">No activity yet.</div>;
+
   return (
-    <div className="card">
-      {items.map((it, i) => it.type === "expense" ? (
-        <div className="split-row" key={i}>
-          <span aria-hidden="true" style={{ width: 22 }}>{expenseIcon(it.e.desc)}</span>
-          <div style={{ flex: 1, fontSize: 13.5 }}>{memberName(it.e.paidBy)} added <b>{it.e.desc}</b></div>
-          <div className="small muted">{it.date}</div>
+    <div className="card activity-feed">
+      {items.map((item) => item.type === "expense" ? (
+        <div className="split-row activity-item" key={item.id}>
+          <span className="activity-item-icon" aria-hidden="true">{expenseIcon(item.e.desc)}</span>
+          <div className="activity-item-content">
+            <div className="activity-item-description">
+              {memberName(item.e.paidBy)} added <b>{item.e.desc}</b>
+            </div>
+            <ActivityTimestamp timestamp={item.occurredAt} expenseDate={item.e.date} />
+          </div>
         </div>
       ) : (
-        <div className="split-row" key={i}>
-          <span style={{ width: 22 }}>{it.s.status === "settled" ? "✅" : it.s.status === "reported_problem" ? "⚠️" : "⏳"}</span>
-          <div style={{ flex: 1, fontSize: 13.5 }}>
-            {it.s.status === "settled"
-              ? <>{it.s.from === user.id ? "You" : memberName(it.s.from)} paid {it.s.to === user.id ? "you" : memberName(it.s.to)} <b>{money(it.s.amount, it.s.currency)}</b></>
-              : it.s.status === "reported_problem"
-                ? <>{it.s.to === user.id ? "You reported a problem with" : memberName(it.s.to) + " reported a problem with"} the payment from {it.s.from === user.id ? "you" : memberName(it.s.from)} · <b>{money(it.s.amount, it.s.currency)}</b></>
-                : <>{it.s.from === user.id ? "You marked" : memberName(it.s.from) + " marked"} <b>{money(it.s.amount, it.s.currency)}</b> as paid · awaiting {it.s.to === user.id ? "your confirmation" : memberName(it.s.to) + "’s confirmation"}</>}
+        <div className="split-row activity-item" key={item.id}>
+          <span className="activity-item-icon" aria-hidden="true">
+            {item.s.status === "settled" ? "✅" : item.s.status === "reported_problem" ? "⚠️" : "⏳"}
+          </span>
+          <div className="activity-item-content">
+            <div className="activity-item-description">
+              {item.s.status === "settled"
+                ? <>{item.s.from === user.id ? "You" : memberName(item.s.from)} paid {item.s.to === user.id ? "you" : memberName(item.s.to)} <b>{money(item.s.amount, item.s.currency)}</b></>
+                : item.s.status === "reported_problem"
+                  ? <>{item.s.to === user.id ? "You reported a problem with" : memberName(item.s.to) + " reported a problem with"} the payment from {item.s.from === user.id ? "you" : memberName(item.s.from)} · <b>{money(item.s.amount, item.s.currency)}</b></>
+                  : <>{item.s.from === user.id ? "You marked" : memberName(item.s.from) + " marked"} <b>{money(item.s.amount, item.s.currency)}</b> as paid · awaiting {item.s.to === user.id ? "your confirmation" : memberName(item.s.to) + "’s confirmation"}</>}
+            </div>
+            <ActivityTimestamp timestamp={item.occurredAt} />
           </div>
-          <div className="small muted">{it.date}</div>
         </div>
       ))}
     </div>
