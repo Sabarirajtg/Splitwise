@@ -1625,6 +1625,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .activity-item-content {
   min-width: 0;
 }
+.activity-expense-amount {
+  color: var(--text-2);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: normal;
+}
 .activity-item-description {
   min-width: 0;
   font-size: 13.5px;
