@@ -387,7 +387,7 @@ export default function GroupDetail() {
                     <div>
                       <h3 style={{ fontSize: 14.5 }}><span aria-hidden="true" style={{ display: "inline-block", width: 26 }}>{expenseIcon(e.desc)}</span>{e.desc}</h3>
                       <p className="small muted" style={{ marginTop: 3 }}>
-                        {e.date} · paid by {memberName(e.paidBy)}{e.recurring ? ` · repeats ${e.recurring}` : ""}
+                        {e.date}{formatExpenseCreatedTime(e.createdAt) ? ` · ${formatExpenseCreatedTime(e.createdAt)}` : ""} · paid by {memberName(e.paidBy)}{e.recurring ? ` · repeats ${e.recurring}` : ""}
                       </p>
                     </div>
                     <div style={{ textAlign: "right" }}>
@@ -1009,6 +1009,16 @@ function formatActivityTimestamp(timestamp) {
     day: "numeric",
     year: "numeric",
     hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function formatExpenseCreatedTime(timestamp) {
+  if (!timestamp) return null;
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
     minute: "2-digit"
   }).format(date);
 }
