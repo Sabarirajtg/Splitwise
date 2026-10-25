@@ -379,20 +379,33 @@ h1, h2, h3 { font-weight: 700; margin: 0; }
   border-color: var(--purple);
   box-shadow: 0 0 0 3px rgba(139, 92, 246, .13);
 }
-.cash-rate-input {
+.cash-rate-input-wrap .cash-rate-input {
   flex: 1 1 auto;
+  display: block;
+  box-sizing: border-box;
   width: 0;
   min-width: 0;
-  margin: 0 !important;
-  padding: 12px 0 !important;
-  border: 0 !important;
-  outline: 0 !important;
-  box-shadow: none !important;
-  background: transparent !important;
+  height: 52px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  box-shadow: none;
+  background: transparent;
   color: var(--text);
   font-size: 18px;
+  line-height: normal;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.cash-rate-input-wrap .cash-rate-input::-webkit-inner-spin-button,
+.cash-rate-input-wrap .cash-rate-input::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
 }
 .cash-rate-input:read-only {
   cursor: default;
