@@ -1091,6 +1091,7 @@ function ActivityTab({ expenses, settlements, memberName, user }) {
           <div className="activity-item-content">
             <div className="activity-item-description">
               {memberName(item.e.paidBy)} added <b>{item.e.desc}</b>
+              <span className="activity-expense-amount"> · {money(item.e.amount, item.e.currency)}</span>
             </div>
             <ActivityTimestamp timestamp={item.occurredAt} fallbackDate={item.e.date} />
           </div>
