@@ -1459,37 +1459,63 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
             </select>
           </div>
         </div>
-        <div className="field">
-          <label>Payment method</label>
-          <div className="chiprow" role="group" aria-label="Payment method">
-            <button type="button" className={`chip ${paymentMethod === "cash" ? "selected" : ""}`} aria-pressed={paymentMethod === "cash"} onClick={() => setPaymentMethod("cash")}>Cash</button>
-            <button type="button" className={`chip ${paymentMethod === "digital" ? "selected" : ""}`} aria-pressed={paymentMethod === "digital"} onClick={() => setPaymentMethod("digital")}>Digital Payment</button>
+        <section className="payment-method-section" aria-labelledby="payment-method-heading">
+          <h4 id="payment-method-heading" className="payment-section-heading">Payment method</h4>
+          <div className="payment-method-options" role="group" aria-label="Payment method">
+            <button type="button" className={`payment-method-option ${paymentMethod === "cash" ? "is-selected" : ""}`} aria-pressed={paymentMethod === "cash"} onClick={() => setPaymentMethod("cash")}>
+              <span className="payment-method-icon" aria-hidden="true">▣</span>
+              <span className="payment-method-name">Cash</span>
+              <span className="payment-method-description">Actual cash exchange rate</span>
+            </button>
+            <button type="button" className={`payment-method-option ${paymentMethod === "digital" ? "is-selected" : ""}`} aria-pressed={paymentMethod === "digital"} onClick={() => setPaymentMethod("digital")}>
+              <span className="payment-method-icon" aria-hidden="true">▯</span>
+              <span className="payment-method-name">Digital Payment</span>
+              <span className="payment-method-description">Use current exchange rate</span>
+            </button>
           </div>
-        </div>
-        {currency !== group.baseCurrency && paymentMethod === "cash" && (
-          <div className="field">
-            <label htmlFor="cash-conversion-rate">Cash conversion rate (1 {currency} = ? {group.baseCurrency})</label>
-            <input
-              id="cash-conversion-rate"
-              type="number"
-              inputMode="decimal"
-              min="0.000001"
-              step="any"
-              value={conversionRate}
-              onChange={e => setConversionRate(e.target.value)}
-              placeholder={rateLoading ? "Loading rate…" : "Enter conversion rate"}
-              aria-describedby="cash-conversion-rate-help"
-            />
-            <p id="cash-conversion-rate-help" className="small muted" style={{ marginTop: -8, marginBottom: 10 }}>
-              The last saved cash rate for this currency pair is prefilled; otherwise, the current exchange rate is used.
+        </section>
+        {currency !== group.baseCurrency && (
+          <section className="cash-rate-card" aria-labelledby="cash-rate-heading">
+            <div className="cash-rate-card-heading">
+              <span className="cash-rate-icon" aria-hidden="true">⇄</span>
+              <div className="cash-rate-title-wrap">
+                <h4 id="cash-rate-heading">{paymentMethod === "cash" ? "Cash conversion rate" : "Current conversion rate"}</h4>
+                <p>{currency} to {group.baseCurrency} · {paymentMethod === "cash" ? "Editable" : "Current rate"}</p>
+              </div>
+              <span className={`payment-method-badge ${paymentMethod === "cash" ? "cash" : "digital"}`}>{paymentMethod === "cash" ? "Cash" : "Digital"}</span>
+            </div>
+            <label className="cash-rate-label" htmlFor="cash-conversion-rate">1 {currency} =</label>
+            <div className="cash-rate-input-wrap">
+              <input
+                id="cash-conversion-rate"
+                className="cash-rate-input"
+                type="number"
+                inputMode="decimal"
+                min="0.000001"
+                step="any"
+                value={conversionRate}
+                onChange={e => setConversionRate(e.target.value)}
+                placeholder={rateLoading ? "Loading rate…" : "Enter conversion rate"}
+                readOnly={paymentMethod === "digital"}
+                aria-describedby="cash-conversion-rate-help"
+              />
+              <span className="cash-rate-currency">{group.baseCurrency}</span>
+            </div>
+            <p id="cash-conversion-rate-help" className="cash-rate-help">
+              {paymentMethod === "cash"
+                ? "The last saved cash rate for this currency pair is prefilled; otherwise, the current exchange rate is used."
+                : "Digital payments always use the current exchange rate."}
             </p>
-          </div>
-        )}
-        {currency !== group.baseCurrency && conversionRate && Number(conversionRate) > 0 && amount && (
-          <p className="small muted" style={{ marginTop: -8, marginBottom: 14 }}>
-            ≈ {money(Math.round((parseFloat(amount) || 0) * Number(conversionRate) * 100) / 100, group.baseCurrency)}
-            {paymentMethod === "digital" ? " at today's rate" : " using cash rate"}
-          </p>
+            <div className="cash-rate-total">
+              <div>
+                <h4>Converted total</h4>
+                <p>Saved with this expense</p>
+              </div>
+              <strong>{amount && Number(conversionRate) > 0
+                ? money(Math.round((parseFloat(amount) || 0) * Number(conversionRate) * 100) / 100, group.baseCurrency)
+                : money(0, group.baseCurrency)}</strong>
+            </div>
+          </section>
         )}
         <div className="field">
           <label>Paid by</label>
