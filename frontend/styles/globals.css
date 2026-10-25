@@ -1631,6 +1631,44 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   font-variant-numeric: tabular-nums;
   white-space: normal;
 }
+.activity-item-amount {
+  flex: 0 0 auto;
+  max-width: 36%;
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--purple);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.4;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.activity-expense .activity-item-icon {
+  color: var(--purple);
+}
+.activity-expense {
+  border-left: 3px solid var(--purple);
+  padding-left: 12px;
+}
+.activity-settlement {
+  border-left: 3px solid var(--teal);
+  padding-left: 12px;
+}
+.activity-settlement.is-settled .activity-item-icon,
+.activity-settlement.is-settled .activity-item-description b {
+  color: var(--teal);
+}
+.activity-settlement.is-pending .activity-item-icon {
+  color: var(--text-2);
+}
+.activity-settlement.has-problem {
+  border-left-color: var(--coral);
+}
+.activity-settlement.has-problem .activity-item-icon,
+.activity-settlement.has-problem .activity-item-description b {
+  color: var(--coral);
+}
 .activity-item-description {
   min-width: 0;
   font-size: 13.5px;
@@ -1669,5 +1707,14 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   }
   .activity-event-time {
     font-size: 11.5px;
+  }
+  .activity-item-amount {
+    max-width: 32%;
+    padding-left: 8px;
+    font-size: 12.5px;
+  }
+  .activity-expense,
+  .activity-settlement {
+    padding-left: 9px;
   }
 }
