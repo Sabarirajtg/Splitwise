@@ -1463,12 +1463,19 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
           <h4 id="payment-method-heading" className="payment-section-heading">Payment method</h4>
           <div className="payment-method-options" role="group" aria-label="Payment method">
             <button type="button" className={`payment-method-option ${paymentMethod === "cash" ? "is-selected" : ""}`} aria-pressed={paymentMethod === "cash"} onClick={() => setPaymentMethod("cash")}>
-              <span className="payment-method-icon" aria-hidden="true">▣</span>
+              <svg className="payment-method-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none">
+                <rect x="2.5" y="6" width="19" height="13" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
+                <circle cx="12" cy="12.5" r="3" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M6 9h.01M18 16h.01" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+              </svg>
               <span className="payment-method-name">Cash</span>
               <span className="payment-method-description">Actual cash exchange rate</span>
             </button>
             <button type="button" className={`payment-method-option ${paymentMethod === "digital" ? "is-selected" : ""}`} aria-pressed={paymentMethod === "digital"} onClick={() => setPaymentMethod("digital")}>
-              <span className="payment-method-icon" aria-hidden="true">▯</span>
+              <svg className="payment-method-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none">
+                <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M10 5h4M11 18.5h2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
               <span className="payment-method-name">Digital Payment</span>
               <span className="payment-method-description">Use current exchange rate</span>
             </button>
@@ -1477,7 +1484,9 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
         {currency !== group.baseCurrency && (
           <section className="cash-rate-card" aria-labelledby="cash-rate-heading">
             <div className="cash-rate-card-heading">
-              <span className="cash-rate-icon" aria-hidden="true">⇄</span>
+              <svg className="cash-rate-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none">
+                <path d="M4 7h15m0 0-3-3m3 3-3 3M20 17H5m0 0 3-3m-3 3 3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
               <div className="cash-rate-title-wrap">
                 <h4 id="cash-rate-heading">{paymentMethod === "cash" ? "Cash conversion rate" : "Current conversion rate"}</h4>
                 <p>{currency} to {group.baseCurrency} · {paymentMethod === "cash" ? "Editable" : "Current rate"}</p>
