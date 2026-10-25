@@ -723,7 +723,7 @@ app.put("/api/expenses/:id", async (req, res) => {
     const { userId, desc, amount, currency, paymentMethod = expense.paymentMethod || "digital", fxRate, paidBy, date, recurring, splitMethod, splits } = req.body || {};
     if (!isGroupMember(group, userId)) return res.status(403).json({ error: "Only group members can update expenses" });
     if (typeof desc !== "string" || !desc.trim() || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
-      return res.status(400).json({ error: "Enter a valid description and amount");
+      return res.status(400).json({ error: "Enter a valid description and amount" });
     }
     if (!CURRENCIES.includes(currency) || !isGroupMember(group, paidBy)) return res.status(400).json({ error: "Invalid currency or payer" });
     if (!["cash", "digital"].includes(paymentMethod)) return res.status(400).json({ error: "Select Cash or Digital Payment" });
@@ -737,7 +737,7 @@ app.put("/api/expenses/:id", async (req, res) => {
       (paymentMethod !== "cash" || fxRate === undefined || Number(expense.fxRate) === Number(fxRate)) &&
       expense.amountInBase != null;
     const fx = sameAmountCurrencyMethodAndRate
-      ? { amountInBase: expense.amountInBase, rate: expense.fxRate || 1, rates: expense.fxRates || { [currency]: 1 }, rememberedPair: null }
+      ? { amountInBase: expense.amountInBase, rate: expense.fxRate || 1, rates: expense.fxRates || { [currency]: 1 }, rememberedPair: paymentMethod === "cash" && currency !== group.baseCurrency ? (currency + "_" + group.baseCurrency) : null }
       : await resolveExpenseFx(Number(amount), currency, group.baseCurrency, paymentMethod, fxRate, group);
     Object.assign(expense, {
       desc: desc.trim(), amount: Number(amount), currency, amountInBase: fx.amountInBase,
