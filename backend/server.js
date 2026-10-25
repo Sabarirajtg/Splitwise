@@ -217,7 +217,7 @@ app.get("/api/groups/:id", async (req, res) => {
   const members = await User.find({ _id: { $in: group.memberIds } });
   res.json({
     id: group._id, name: group.name, baseCurrency: group.baseCurrency, spendingCurrency: group.spendingCurrency || group.baseCurrency,
-    currencyConfigured: Boolean(group.spendingCurrency), memberIds: group.memberIds, simplificationOptOutIds: group.simplificationOptOutIds || [], inviteToken: group.inviteToken || null,
+    currencyConfigured: Boolean(group.spendingCurrency), cashFxRates: group.cashFxRates || {}, memberIds: group.memberIds, simplificationOptOutIds: group.simplificationOptOutIds || [], inviteToken: group.inviteToken || null,
     members: members.map(m => ({ id: m._id, name: m.name, upiId: m.upiId || null }))
   });
 });
@@ -624,16 +624,57 @@ app.post("/api/invitations/:token/join", async (req, res) => {
 
 // ---------- Expenses ----------
 app.get("/api/groups/:id/expenses", async (req, res) => {
-  const expenses = await Expense.find({ groupId: req.params.id }).sort({ date: -1 });
+  // The editable expense date can be earlier than the moment it was entered.
+  // Creation time defines newest-added-first order; date is only a fallback.
+  const expenses = await Expense.find({ groupId: req.params.id }).sort({
+    createdAt: -1,
+    date: -1,
+    _id: -1
+  });
   res.json(expenses.map(mapExpense));
 });
 
 function mapExpense(e) {
   return {
     id: e._id, groupId: e.groupId, desc: e.desc, amount: e.amount, currency: e.currency,
-    amountInBase: e.amountInBase, fxRate: e.fxRate, paidBy: e.paidBy, splits: e.splits, createdBy: e.createdBy || null, date: e.date,
+    amountInBase: e.amountInBase, fxRate: e.fxRate, paymentMethod: e.paymentMethod || "digital", paidBy: e.paidBy, splits: e.splits, createdBy: e.createdBy || null, date: e.date,
+    createdAt: e.createdAt || null, updatedAt: e.updatedAt || null,
     recurring: e.recurring, splitMethod: e.splitMethod, lastGenerated: e.lastGenerated
   };
+}
+
+async function resolveExpenseFx(amount, currency, baseCurrency, paymentMethod, requestedRate, group) {
+  if (currency === baseCurrency) {
+    return { amountInBase: Math.round(amount * 100) / 100, rate: 1, rates: { [currency]: 1 } };
+  }
+
+  if (paymentMethod === "cash") {
+    const pairKey = `${currency}_${baseCurrency}`;
+    let rate = requestedRate;
+    if (rate === undefined || rate === null || rate === "") {
+      rate = group.cashFxRates && group.cashFxRates[pairKey];
+    }
+    if (rate === undefined || rate === null || rate === "") {
+      const currentRates = await getRates(currency);
+      rate = currentRates[baseCurrency];
+    }
+    rate = Number(rate);
+    if (!Number.isFinite(rate) || rate <= 0) throw new Error("Enter a valid cash conversion rate");
+    return {
+      amountInBase: Math.round(amount * rate * 100) / 100,
+      rate,
+      rates: { [currency]: 1, [baseCurrency]: rate },
+      rememberedPair: pairKey
+    };
+  }
+
+  const fx = await convertWithSnapshot(amount, currency, baseCurrency);
+  return { ...fx, rememberedPair: null };
+}
+
+function rememberCashRate(group, fx) {
+  if (!fx.rememberedPair || !Number.isFinite(fx.rate) || fx.rate <= 0) return;
+  group.cashFxRates = { ...(group.cashFxRates || {}), [fx.rememberedPair]: fx.rate };
 }
 
 app.post("/api/groups/:id/expenses", async (req, res) => {
@@ -641,23 +682,30 @@ app.post("/api/groups/:id/expenses", async (req, res) => {
   try {
     const group = await Group.findById(req.params.id);
     if (!group) return res.status(404).json({ error: "Group not found" });
-    const { userId, desc, amount, currency, paidBy, date, recurring, splitMethod, splits } = req.body || {};
+    const { userId, desc, amount, currency, paymentMethod = "cash", fxRate, paidBy, date, recurring, splitMethod, splits } = req.body || {};
     if (!isGroupMember(group, userId)) return res.status(403).json({ error: "Only group members can add expenses" });
     if (typeof desc !== "string" || !desc.trim()) return res.status(400).json({ error: "Enter a description" });
     if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) return res.status(400).json({ error: "Enter a valid amount" });
     if (!CURRENCIES.includes(currency) || !isGroupMember(group, paidBy)) return res.status(400).json({ error: "Select a valid currency and payer" });
+    if (!["cash", "digital"].includes(paymentMethod)) return res.status(400).json({ error: "Select Cash or Digital Payment" });
+    if (paymentMethod === "cash" && currency !== group.baseCurrency && fxRate !== undefined && (!Number.isFinite(Number(fxRate)) || Number(fxRate) <= 0)) return res.status(400).json({ error: "Enter a valid cash conversion rate" });
     if (!Array.isArray(splits) || splits.length === 0 ||
         splits.some((split) => !split || !isGroupMember(group, split.userId) ||
           !Number.isFinite(Number(split.amount)) || Number(split.amount) < 0)) {
       return res.status(400).json({ error: "Select valid people and amounts for the split" });
     }
 
-    const amountInBase = await convert(Number(amount), currency, group.baseCurrency);
+    const fx = await resolveExpenseFx(Number(amount), currency, group.baseCurrency, paymentMethod, fxRate, group);
     const expense = await Expense.create({
-      _id: nanoid(10), groupId: group._id, desc: desc.trim(), amount: Number(amount), currency, amountInBase,
+      _id: nanoid(10), groupId: group._id, desc: desc.trim(), amount: Number(amount), currency,
+      amountInBase: fx.amountInBase, fxRate: fx.rate, fxRates: fx.rates, paymentMethod,
       paidBy, createdBy: userId, date: date || new Date().toISOString().slice(0, 10), recurring: recurring || null,
       splitMethod, splits, lastGenerated: date
     });
+    if (paymentMethod === "cash" && fx.rememberedPair) {
+      rememberCashRate(group, fx);
+      await group.save();
+    }
     await notifyExpenseChange(group, expense, userId, "added").catch((error) => console.error("Expense notification failed:", error.message));
     res.status(201).json(mapExpense(expense));
   } catch (e) {
@@ -673,19 +721,34 @@ app.put("/api/expenses/:id", async (req, res) => {
     if (!expense) return res.status(404).json({ error: "Not found" });
     const group = await Group.findById(expense.groupId);
     if (!group) return res.status(404).json({ error: "Group not found" });
-    const { userId, desc, amount, currency, paidBy, date, recurring, splitMethod, splits } = req.body || {};
+    const { userId, desc, amount, currency, paymentMethod = expense.paymentMethod || "digital", fxRate, paidBy, date, recurring, splitMethod, splits } = req.body || {};
     if (!isGroupMember(group, userId)) return res.status(403).json({ error: "Only group members can update expenses" });
     if (typeof desc !== "string" || !desc.trim() || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
       return res.status(400).json({ error: "Enter a valid description and amount" });
     }
     if (!CURRENCIES.includes(currency) || !isGroupMember(group, paidBy)) return res.status(400).json({ error: "Invalid currency or payer" });
+    if (!["cash", "digital"].includes(paymentMethod)) return res.status(400).json({ error: "Select Cash or Digital Payment" });
+    if (paymentMethod === "cash" && currency !== group.baseCurrency && fxRate !== undefined && (!Number.isFinite(Number(fxRate)) || Number(fxRate) <= 0)) return res.status(400).json({ error: "Enter a valid cash conversion rate" });
     if (!Array.isArray(splits) || !splits.length || splits.some((split) => !group.memberIds.includes(split.userId) || !Number.isFinite(Number(split.amount)) || Number(split.amount) < 0)) {
       return res.status(400).json({ error: "Invalid expense splits" });
     }
     const previousInvolvedIds = expenseInvolvedIds(expense);
-    const sameAmountAndCurrency = expense.amount === Number(amount) && expense.currency === currency && expense.amountInBase != null;
-    const fx = sameAmountAndCurrency ? { amountInBase: expense.amountInBase, rate: expense.fxRate, rates: expense.fxRates } : await convertWithSnapshot(Number(amount), currency, group.baseCurrency);
-    Object.assign(expense, { desc: desc.trim(), amount: Number(amount), currency, amountInBase: fx.amountInBase, fxRate: fx.rate, fxRates: fx.rates, paidBy, date, recurring: recurring || null, splitMethod, splits });
+    const sameAmountCurrencyMethodAndRate = expense.amount === Number(amount) &&
+      expense.currency === currency &&
+      (expense.paymentMethod || "digital") === paymentMethod &&
+      (paymentMethod !== "cash" || fxRate === undefined || Number(expense.fxRate) === Number(fxRate)) &&
+      expense.amountInBase != null;
+    const fx = sameAmountCurrencyMethodAndRate
+      ? { amountInBase: expense.amountInBase, rate: expense.fxRate || 1, rates: expense.fxRates || { [currency]: 1 }, rememberedPair: paymentMethod === "cash" && currency !== group.baseCurrency ? (currency + "_" + group.baseCurrency) : null }
+      : await resolveExpenseFx(Number(amount), currency, group.baseCurrency, paymentMethod, fxRate, group);
+    Object.assign(expense, {
+      desc: desc.trim(), amount: Number(amount), currency, amountInBase: fx.amountInBase,
+      fxRate: fx.rate, fxRates: fx.rates, paymentMethod, paidBy, date, recurring: recurring || null, splitMethod, splits
+    });
+    if (paymentMethod === "cash" && fx.rememberedPair) {
+      rememberCashRate(group, fx);
+      await group.save();
+    }
     await expense.save();
     await notifyExpenseChange(group, expense, userId, "updated", previousInvolvedIds).catch((error) => console.error("Expense update notification failed:", error.message));
     res.json(mapExpense(expense));
@@ -725,7 +788,7 @@ app.post("/api/groups/:id/recurring/process", async (req, res) => {
       const newDate = next.toISOString().slice(0, 10);
       const generatedExpense = await Expense.create({
         _id: nanoid(10), groupId: t.groupId, desc: t.desc, amount: t.amount, currency: t.currency,
-        amountInBase: t.amountInBase, fxRate: t.fxRate, fxRates: t.fxRates, paidBy: t.paidBy, splits: t.splits, date: newDate,
+        amountInBase: t.amountInBase, fxRate: t.fxRate, fxRates: t.fxRates, paymentMethod: t.paymentMethod || "digital", paidBy: t.paidBy, splits: t.splits, date: newDate,
         createdBy: t.createdBy || null, recurring: null, splitMethod: t.splitMethod, lastGenerated: newDate, generatedFrom: t._id
       });
       if (group) {
@@ -742,13 +805,33 @@ app.post("/api/groups/:id/recurring/process", async (req, res) => {
 
 // ---------- Settlements & balances ----------
 app.get("/api/groups/:id/settlements", async (req, res) => {
-  const settlements = await Settlement.find({ groupId: req.params.id }).sort({ createdAt: -1, date: -1 });
-  res.json(settlements.map(s => ({ id: s._id, groupId: s.groupId, from: s.from, to: s.to, amount: s.amount, currency: s.currency, date: s.date, status: s.status || "settled", reportedBy: s.reportedBy || null, confirmedBy: s.confirmedBy || null, reportedAt: s.reportedAt || s.createdAt || null, confirmedAt: s.confirmedAt || null, issueNote: s.issueNote || null })));
+  const settlements = await Settlement.find({ groupId: req.params.id }).sort({
+    updatedAt: -1,
+    createdAt: -1,
+    date: -1
+  });
+  res.json(settlements.map(s => ({
+    id: s._id,
+    groupId: s.groupId,
+    from: s.from,
+    to: s.to,
+    amount: s.amount,
+    currency: s.currency,
+    date: s.date,
+    status: s.status || "settled",
+    reportedBy: s.reportedBy || null,
+    confirmedBy: s.confirmedBy || null,
+    reportedAt: s.reportedAt || s.createdAt || null,
+    confirmedAt: s.confirmedAt || null,
+    createdAt: s.createdAt || null,
+    updatedAt: s.updatedAt || null,
+    issueNote: s.issueNote || null
+  })));
 });
 
 app.post("/api/groups/:id/settlements", async (req, res) => {
   if (!requireInternal(req, res)) return;
-  const { from, to, amount, currency, userId, existingSettlementId } = req.body || {};
+  const { from, to, amount, currency, userId, existingSettlementId, date: requestedDate } = req.body || {};
   const group = await Group.findById(req.params.id);
   if (!group) return res.status(404).json({ error: "Group not found" });
   if (!userId || !isGroupMember(group, userId)) return res.status(403).json({ error: "Only group members can mark payments" });
@@ -814,7 +897,7 @@ app.post("/api/groups/:id/settlements", async (req, res) => {
     to,
     amount: roundedAmount,
     currency,
-    date: now.toISOString().slice(0, 10),
+    date: requestedDate || now.toISOString().slice(0, 10),
     status: "pending_confirmation",
     reportedBy: userId,
     reportedAt: now

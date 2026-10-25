@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { api, getSession, money, initials, todayISO, CURRENCIES } from "../../lib/api";
 import { avatarColor } from "../../lib/colors";
@@ -28,6 +28,7 @@ export default function GroupDetail() {
   const [upiDraft, setUpiDraft] = useState("");
   const [savingUpi, setSavingUpi] = useState(false);
   const [upiPromptDismissed, setUpiPromptDismissed] = useState(false);
+  const refreshPromiseRef = useRef(null);
 
   useEffect(() => {
     const session = getSession();
@@ -39,40 +40,78 @@ export default function GroupDetail() {
     if (user && id) loadAll();
   }, [user, id]);
 
-  // Keep pending payment updates visible if the recipient already has a group open.
+  // Refresh the entire group view while it is open so changes made by other
+  // members appear automatically without a manual page refresh. Pause polling
+  // when the tab is hidden, then refresh immediately on focus/visibility restore.
   useEffect(() => {
     if (!user || !id) return undefined;
     let active = true;
-    async function refreshSettlements() {
-      try {
-        const latest = await api.groupSettlements(id);
-        if (active) setSettlements(Array.isArray(latest) ? latest : []);
-      } catch {
-        // Leave the last rendered state in place during transient network errors.
-      }
+
+    async function refreshVisibleGroup() {
+      if (!active || document.visibilityState !== "visible") return;
+      await refreshGroupData();
     }
+
     function onVisibilityChange() {
-      if (document.visibilityState === "visible") refreshSettlements();
+      if (document.visibilityState === "visible") refreshVisibleGroup();
     }
-    window.addEventListener("focus", refreshSettlements);
+
+    window.addEventListener("focus", refreshVisibleGroup);
     document.addEventListener("visibilitychange", onVisibilityChange);
-    const intervalId = window.setInterval(refreshSettlements, 30000);
+    const intervalId = window.setInterval(refreshVisibleGroup, 15000);
     return () => {
       active = false;
-      window.removeEventListener("focus", refreshSettlements);
+      window.removeEventListener("focus", refreshVisibleGroup);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.clearInterval(intervalId);
     };
   }, [user, id]);
 
-  async function loadAll() {
-    try { await api.processRecurring(id); } catch (e) { showToast(e.message || "Could not process recurring expenses", "error"); }
+  async function refreshGroupData({ showError = false } = {}) {
+    if (refreshPromiseRef.current) return refreshPromiseRef.current;
+
+    const refreshPromise = (async () => {
+      try {
+        const [g, exps, setl, bal] = await Promise.all([
+          api.getGroup(id),
+          api.groupExpenses(id),
+          api.groupSettlements(id),
+          api.balances(id)
+        ]);
+        setGroup(g);
+        setExpenses(Array.isArray(exps) ? exps : []);
+        setSettlements(Array.isArray(setl) ? setl : []);
+        setBalData(bal);
+        return g;
+      } catch (error) {
+        if (showError) showToast(error.message || "Could not load group data", "error");
+        return null;
+      }
+    })();
+
+    refreshPromiseRef.current = refreshPromise;
     try {
-      const [g, exps, setl, bal] = await Promise.all([api.getGroup(id), api.groupExpenses(id), api.groupSettlements(id), api.balances(id)]);
-      setGroup(g); setExpenses(exps); setSettlements(setl); setBalData(bal);
-      setSettings({ baseCurrency: g.baseCurrency, spendingCurrency: g.spendingCurrency || g.baseCurrency });
+      return await refreshPromise;
+    } finally {
+      if (refreshPromiseRef.current === refreshPromise) refreshPromiseRef.current = null;
+    }
+  }
+
+  async function loadAll() {
+    try {
+      await api.processRecurring(id);
+    } catch (error) {
+      showToast(error.message || "Could not process recurring expenses", "error");
+    }
+
+    const g = await refreshGroupData({ showError: true });
+    if (g) {
+      setSettings({
+        baseCurrency: g.baseCurrency,
+        spendingCurrency: g.spendingCurrency || g.baseCurrency
+      });
       if (!g.currencyConfigured) setSheet("settings");
-    } catch (e) { showToast(e.message || "Could not load group data", "error"); }
+    }
   }
 
   async function saveSettings() {
@@ -139,7 +178,7 @@ export default function GroupDetail() {
     const isRetry = Boolean(settleDraft.existingSettlementId);
     setSettlementAction("mark-paid");
     try {
-      await api.recordSettlement(id, { ...settleDraft, userId: user.id });
+      await api.recordSettlement(id, { ...settleDraft, userId: user.id, date: settleDraft.date || todayISO() });
       setSheet(null);
       setSettleDraft(null);
       await loadAll();
@@ -333,7 +372,9 @@ export default function GroupDetail() {
         {tab === "expenses" && (
           expenses.length === 0
             ? <div className="empty">No expenses yet.<br />Tap + to add one.</div>
-            : expenses.map(e => {
+            : [...expenses].sort((a, b) =>
+                getRecordTimestamp(b.createdAt, b.date) - getRecordTimestamp(a.createdAt, a.date)
+              ).map(e => {
               const paidByMe = e.paidBy === user.id;
               const mySplit = (e.splits.find(s => s.userId === user.id) || { amount: 0 }).amount;
               let sub;
@@ -346,7 +387,7 @@ export default function GroupDetail() {
                     <div>
                       <h3 style={{ fontSize: 14.5 }}><span aria-hidden="true" style={{ display: "inline-block", width: 26 }}>{expenseIcon(e.desc)}</span>{e.desc}</h3>
                       <p className="small muted" style={{ marginTop: 3 }}>
-                        {e.date} · paid by {memberName(e.paidBy)}{e.recurring ? ` · repeats ${e.recurring}` : ""}
+                        {e.date}{formatExpenseCreatedTime(e.createdAt) ? ` · ${formatExpenseCreatedTime(e.createdAt)}` : ""} · paid by {memberName(e.paidBy)}{e.recurring ? ` · repeats ${e.recurring}` : ""}
                       </p>
                     </div>
                     <div style={{ textAlign: "right" }}>
@@ -947,31 +988,139 @@ function BalancesTab({ group, expenses, settlements, balData, user, memberName, 
   );
 }
 
+function getRecordTimestamp(timestamp, fallbackDate) {
+  if (timestamp) {
+    const parsed = Date.parse(timestamp);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  if (fallbackDate) {
+    const parsed = Date.parse(`${fallbackDate}T00:00:00.000Z`);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function formatActivityTimestamp(timestamp) {
+  if (!timestamp) return null;
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function formatExpenseCreatedTime(timestamp) {
+  if (!timestamp) return null;
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function formatActivityCalendarDate(dateValue) {
+  if (!dateValue) return null;
+  // Parse YYYY-MM-DD as a local calendar date, not UTC midnight.
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue);
+  const date = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(dateValue);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+  }).format(date);
+}
+
+function localCalendarKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function ActivityTimestamp({ timestamp, fallbackDate }) {
+  const formattedTimestamp = formatActivityTimestamp(timestamp);
+  const formattedFallbackDate = !formattedTimestamp && fallbackDate
+    ? formatActivityCalendarDate(fallbackDate)
+    : null;
+
+  return (
+    <div className="activity-meta">
+      {formattedTimestamp ? (
+        <time className="activity-event-time" dateTime={timestamp}>
+          {formattedTimestamp}
+        </time>
+      ) : formattedFallbackDate ? (
+        <span className="activity-event-time">{formattedFallbackDate}</span>
+      ) : null}
+    </div>
+  );
+}
+
 function ActivityTab({ expenses, settlements, memberName, user }) {
   const items = [
-    ...expenses.map(e => ({ type: "expense", date: e.date, e })),
-    ...settlements.map(s => ({ type: "settle", date: s.date, s }))
-  ].sort((a, b) => b.date.localeCompare(a.date));
+    ...expenses.map((expense) => ({
+      type: "expense",
+      date: expense.date,
+      occurredAt: expense.createdAt || expense.updatedAt || null,
+      sortAt: getRecordTimestamp(expense.createdAt, expense.date),
+      id: expense.id,
+      e: expense
+    })),
+    ...settlements.map((settlement) => {
+      const statusTimestamp = settlement.status === "settled"
+        ? settlement.confirmedAt || settlement.updatedAt || settlement.createdAt
+        : settlement.status === "reported_problem"
+          ? settlement.reportedAt || settlement.updatedAt || settlement.createdAt
+          : settlement.reportedAt || settlement.createdAt || settlement.updatedAt;
+      return {
+        type: "settle",
+        date: settlement.date,
+        occurredAt: statusTimestamp || null,
+        sortAt: getRecordTimestamp(statusTimestamp, settlement.date),
+        id: settlement.id,
+        s: settlement
+      };
+    })
+  ].sort((a, b) => b.sortAt - a.sortAt || String(b.id).localeCompare(String(a.id)));
+
   if (items.length === 0) return <div className="empty">No activity yet.</div>;
+
   return (
-    <div className="card">
-      {items.map((it, i) => it.type === "expense" ? (
-        <div className="split-row" key={i}>
-          <span aria-hidden="true" style={{ width: 22 }}>{expenseIcon(it.e.desc)}</span>
-          <div style={{ flex: 1, fontSize: 13.5 }}>{memberName(it.e.paidBy)} added <b>{it.e.desc}</b></div>
-          <div className="small muted">{it.date}</div>
+    <div className="card activity-feed">
+      {items.map((item) => item.type === "expense" ? (
+        <div className="split-row activity-item activity-expense" key={item.id}>
+          <span className="activity-item-icon" aria-hidden="true">{expenseIcon(item.e.desc)}</span>
+          <div className="activity-item-content">
+            <div className="activity-item-description">
+              {memberName(item.e.paidBy)} added <b>{item.e.desc}</b>
+            </div>
+            <ActivityTimestamp timestamp={item.occurredAt} fallbackDate={item.e.date} />
+          </div>
+          <div className="activity-item-amount">{money(item.e.amount, item.e.currency)}</div>
         </div>
       ) : (
-        <div className="split-row" key={i}>
-          <span style={{ width: 22 }}>{it.s.status === "settled" ? "✅" : it.s.status === "reported_problem" ? "⚠️" : "⏳"}</span>
-          <div style={{ flex: 1, fontSize: 13.5 }}>
-            {it.s.status === "settled"
-              ? <>{it.s.from === user.id ? "You" : memberName(it.s.from)} paid {it.s.to === user.id ? "you" : memberName(it.s.to)} <b>{money(it.s.amount, it.s.currency)}</b></>
-              : it.s.status === "reported_problem"
-                ? <>{it.s.to === user.id ? "You reported a problem with" : memberName(it.s.to) + " reported a problem with"} the payment from {it.s.from === user.id ? "you" : memberName(it.s.from)} · <b>{money(it.s.amount, it.s.currency)}</b></>
-                : <>{it.s.from === user.id ? "You marked" : memberName(it.s.from) + " marked"} <b>{money(it.s.amount, it.s.currency)}</b> as paid · awaiting {it.s.to === user.id ? "your confirmation" : memberName(it.s.to) + "’s confirmation"}</>}
+        <div className={`split-row activity-item activity-settlement ${item.s.status === "settled" ? "is-settled" : item.s.status === "reported_problem" ? "has-problem" : "is-pending"}`} key={item.id}>
+          <span className="activity-item-icon" aria-hidden="true">
+            {item.s.status === "settled" ? "✅" : item.s.status === "reported_problem" ? "⚠️" : "⏳"}
+          </span>
+          <div className="activity-item-content">
+            <div className="activity-item-description">
+              {item.s.status === "settled"
+                ? <>{item.s.from === user.id ? "You" : memberName(item.s.from)} paid {item.s.to === user.id ? "you" : memberName(item.s.to)} <b>{money(item.s.amount, item.s.currency)}</b></>
+                : item.s.status === "reported_problem"
+                  ? <>{item.s.to === user.id ? "You reported a problem with" : memberName(item.s.to) + " reported a problem with"} the payment from {item.s.from === user.id ? "you" : memberName(item.s.from)} · <b>{money(item.s.amount, item.s.currency)}</b></>
+                  : <>{item.s.from === user.id ? "You marked" : memberName(item.s.from) + " marked"} <b>{money(item.s.amount, item.s.currency)}</b> as paid · awaiting {item.s.to === user.id ? "your confirmation" : memberName(item.s.to) + "’s confirmation"}</>}
+            </div>
+            <ActivityTimestamp timestamp={item.occurredAt} />
           </div>
-          <div className="small muted">{it.date}</div>
         </div>
       ))}
     </div>
@@ -1188,21 +1337,47 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
   const [error, setError] = useState("");
   const [busyAction, setBusyAction] = useState(null);
   const busy = Boolean(busyAction);
-  const [fxPreview, setFxPreview] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState(editing ? (editing.paymentMethod || "digital") : "cash");
+  const [conversionRate, setConversionRate] = useState(() => {
+    if (editing && editing.currency !== group.baseCurrency && editing.fxRate) return String(editing.fxRate);
+    const key = `${editing ? editing.currency : (group.spendingCurrency || group.baseCurrency)}_${group.baseCurrency}`;
+    return group.cashFxRates && group.cashFxRates[key] ? String(group.cashFxRates[key]) : "";
+  });
+  const [rateLoading, setRateLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    async function loadFx() {
-      if (currency === group.baseCurrency || !amount) { setFxPreview(null); return; }
+    async function loadConversionRate() {
+      if (currency === group.baseCurrency) {
+        setConversionRate("1");
+        return;
+      }
+      const pairKey = `${currency}_${group.baseCurrency}`;
+      const savedRate = group.cashFxRates && group.cashFxRates[pairKey];
+      const editingRate = editing && editing.currency === currency && editing.paymentMethod === "cash" && editing.fxRate;
+      if (paymentMethod === "cash" && editingRate) {
+        setConversionRate(String(editingRate));
+        return;
+      }
+      if (paymentMethod === "cash" && savedRate) {
+        setConversionRate(String(savedRate));
+        return;
+      }
+      setRateLoading(true);
       try {
         const { rates } = await api.fx(currency);
         const rate = rates[group.baseCurrency];
-        if (rate && !cancelled) setFxPreview(Math.round(parseFloat(amount) * rate * 100) / 100);
-      } catch { if (!cancelled) setFxPreview(null); }
+        if (!cancelled && rate) setConversionRate(String(rate));
+        if (!cancelled && !rate) setConversionRate("");
+      } catch {
+        if (!cancelled) setConversionRate("");
+      } finally {
+        if (!cancelled) setRateLoading(false);
+      }
     }
-    loadFx();
+    loadConversionRate();
     return () => { cancelled = true; };
-  }, [currency, amount, group.baseCurrency]);
+  }, [currency, group.baseCurrency, paymentMethod, editing?.id, editing?.currency, editing?.paymentMethod, editing?.fxRate]);
 
   function toggleMember(uid) {
     setIncludedIds(prev => prev.includes(uid) ? prev.filter(x => x !== uid) : [...prev, uid]);
@@ -1250,7 +1425,11 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
 
     setBusyAction("save");
     try {
-      const payload = { desc: desc.trim(), amount: Math.round(amt * 100) / 100, currency, paidBy, date, recurring: recurring || null, splitMethod, splits };
+      const payload = {
+        desc: desc.trim(), amount: Math.round(amt * 100) / 100, currency, paymentMethod,
+        ...(currency !== group.baseCurrency && paymentMethod === "cash" ? { fxRate: Number(conversionRate) } : {}),
+        paidBy, date, recurring: recurring || null, splitMethod, splits
+      };
       if (editing) { await api.updateExpense(editing.id, payload); showToast("Expense updated successfully!"); }
       else { await api.addExpense(group.id, payload); showToast("Expense added successfully!"); }
       onSaved();
@@ -1291,10 +1470,72 @@ function ExpenseSheet({ group, user, editing, onClose, onSaved, onDeleted }) {
             </select>
           </div>
         </div>
-        {fxPreview != null && (
-          <p className="small muted" style={{ marginTop: -8, marginBottom: 14 }}>
-            ≈ {money(fxPreview, group.baseCurrency)} at today's rate (group's currency is {group.baseCurrency})
-          </p>
+        <section className="payment-method-section" aria-labelledby="payment-method-heading">
+          <h4 id="payment-method-heading" className="payment-section-heading">Payment method</h4>
+          <div className="payment-method-options" role="group" aria-label="Payment method">
+            <button type="button" className={`payment-method-option ${paymentMethod === "cash" ? "is-selected" : ""}`} aria-pressed={paymentMethod === "cash"} onClick={() => setPaymentMethod("cash")}>
+              <svg className="payment-method-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none">
+                <rect x="2.5" y="6" width="19" height="13" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
+                <circle cx="12" cy="12.5" r="3" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M6 9h.01M18 16h.01" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+              </svg>
+              <span className="payment-method-name">Cash</span>
+              <span className="payment-method-description">Actual cash exchange rate</span>
+            </button>
+            <button type="button" className={`payment-method-option ${paymentMethod === "digital" ? "is-selected" : ""}`} aria-pressed={paymentMethod === "digital"} onClick={() => setPaymentMethod("digital")}>
+              <svg className="payment-method-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none">
+                <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M10 5h4M11 18.5h2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+              <span className="payment-method-name">Digital Payment</span>
+              <span className="payment-method-description">Use current exchange rate</span>
+            </button>
+          </div>
+        </section>
+        {currency !== group.baseCurrency && (
+          <section className="cash-rate-card" aria-labelledby="cash-rate-heading">
+            <div className="cash-rate-card-heading">
+              <svg className="cash-rate-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none">
+                <path d="M4 7h15m0 0-3-3m3 3-3 3M20 17H5m0 0 3-3m-3 3 3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <div className="cash-rate-title-wrap">
+                <h4 id="cash-rate-heading">{paymentMethod === "cash" ? "Cash conversion rate" : "Current conversion rate"}</h4>
+                <p>{currency} to {group.baseCurrency} · {paymentMethod === "cash" ? "Editable" : "Current rate"}</p>
+              </div>
+              <span className={`payment-method-badge ${paymentMethod === "cash" ? "cash" : "digital"}`}>{paymentMethod === "cash" ? "Cash" : "Digital"}</span>
+            </div>
+            <label className="cash-rate-label" htmlFor="cash-conversion-rate">1 {currency} =</label>
+            <div className="cash-rate-input-wrap">
+              <input
+                id="cash-conversion-rate"
+                className="cash-rate-input"
+                type="number"
+                inputMode="decimal"
+                min="0.000001"
+                step="any"
+                value={conversionRate}
+                onChange={e => setConversionRate(e.target.value)}
+                placeholder={rateLoading ? "Loading rate…" : "Enter conversion rate"}
+                readOnly={paymentMethod === "digital"}
+                aria-describedby="cash-conversion-rate-help"
+              />
+              <span className="cash-rate-currency">{group.baseCurrency}</span>
+            </div>
+            <p id="cash-conversion-rate-help" className="cash-rate-help">
+              {paymentMethod === "cash"
+                ? "The last saved cash rate for this currency pair is prefilled; otherwise, the current exchange rate is used."
+                : "Digital payments always use the current exchange rate."}
+            </p>
+            <div className="cash-rate-total">
+              <div>
+                <h4>Converted total</h4>
+                <p>Saved with this expense</p>
+              </div>
+              <strong>{amount && Number(conversionRate) > 0
+                ? money(Math.round((parseFloat(amount) || 0) * Number(conversionRate) * 100) / 100, group.baseCurrency)
+                : money(0, group.baseCurrency)}</strong>
+            </div>
+          </section>
         )}
         <div className="field">
           <label>Paid by</label>
