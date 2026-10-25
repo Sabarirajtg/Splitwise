@@ -688,6 +688,7 @@ app.post("/api/groups/:id/expenses", async (req, res) => {
     if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) return res.status(400).json({ error: "Enter a valid amount" });
     if (!CURRENCIES.includes(currency) || !isGroupMember(group, paidBy)) return res.status(400).json({ error: "Select a valid currency and payer" });
     if (!["cash", "digital"].includes(paymentMethod)) return res.status(400).json({ error: "Select Cash or Digital Payment" });
+    if (paymentMethod === "cash" && currency !== group.baseCurrency && fxRate !== undefined && (!Number.isFinite(Number(fxRate)) || Number(fxRate) <= 0)) return res.status(400).json({ error: "Enter a valid cash conversion rate" });
     if (!Array.isArray(splits) || splits.length === 0 ||
         splits.some((split) => !split || !isGroupMember(group, split.userId) ||
           !Number.isFinite(Number(split.amount)) || Number(split.amount) < 0)) {
@@ -727,6 +728,7 @@ app.put("/api/expenses/:id", async (req, res) => {
     }
     if (!CURRENCIES.includes(currency) || !isGroupMember(group, paidBy)) return res.status(400).json({ error: "Invalid currency or payer" });
     if (!["cash", "digital"].includes(paymentMethod)) return res.status(400).json({ error: "Select Cash or Digital Payment" });
+    if (paymentMethod === "cash" && currency !== group.baseCurrency && fxRate !== undefined && (!Number.isFinite(Number(fxRate)) || Number(fxRate) <= 0)) return res.status(400).json({ error: "Enter a valid cash conversion rate" });
     if (!Array.isArray(splits) || !splits.length || splits.some((split) => !group.memberIds.includes(split.userId) || !Number.isFinite(Number(split.amount)) || Number(split.amount) < 0)) {
       return res.status(400).json({ error: "Invalid expense splits" });
     }
@@ -786,7 +788,7 @@ app.post("/api/groups/:id/recurring/process", async (req, res) => {
       const newDate = next.toISOString().slice(0, 10);
       const generatedExpense = await Expense.create({
         _id: nanoid(10), groupId: t.groupId, desc: t.desc, amount: t.amount, currency: t.currency,
-        amountInBase: t.amountInBase, fxRate: t.fxRate, fxRates: t.fxRates, paidBy: t.paidBy, splits: t.splits, date: newDate,
+        amountInBase: t.amountInBase, fxRate: t.fxRate, fxRates: t.fxRates, paymentMethod: t.paymentMethod || "digital", paidBy: t.paidBy, splits: t.splits, date: newDate,
         createdBy: t.createdBy || null, recurring: null, splitMethod: t.splitMethod, lastGenerated: newDate, generatedFrom: t._id
       });
       if (group) {
