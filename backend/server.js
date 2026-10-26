@@ -5,7 +5,7 @@ const { nanoid } = require("nanoid");
 const connectDB = require("./db");
 const { User, Group, Expense, Settlement, PushSubscription } = require("./models");
 const { convert, getRates, convertWithSnapshot } = require("./fx");
-const { simplifyDebts, expenseSummary } = require("./calculations");
+const { toMinor, fromMinor, allocateSharesMinor, simplifyDebts, expenseSummary } = require("./calculations");
 const { getVapidPublicKey, isPushConfigured, sendWebPush } = require("./webPush");
 
 const app = express();
@@ -967,15 +967,27 @@ app.get("/api/groups/:id/balances", async (req, res) => {
   if (!group) return res.status(404).json({ error: "Not found" });
   const expenses = await Expense.find({ groupId: group._id });
   const settlements = await Settlement.find({ groupId: group._id });
-  const bal = {};
-  group.memberIds.forEach(id => (bal[id] = 0));
+  // Keep the ledger in integer minor units and allocate each converted expense
+  // total across splits so rounding can never create or destroy a cent.
+  const balMinor = {};
+  group.memberIds.forEach(id => (balMinor[id] = 0));
   expenses.forEach(e => {
     const baseAmount = e.amountInBase != null ? e.amountInBase : e.amount;
-    const ratio = baseAmount / e.amount;
-    bal[e.paidBy] = (bal[e.paidBy] || 0) + baseAmount;
-    e.splits.forEach(s => { bal[s.userId] = (bal[s.userId] || 0) - Math.round(s.amount * ratio * 100) / 100; });
+    balMinor[e.paidBy] = (balMinor[e.paidBy] || 0) + toMinor(baseAmount);
+    const allocatedShares = allocateSharesMinor(baseAmount, e.splits || []);
+    (e.splits || []).forEach((split, index) => {
+      balMinor[split.userId] = (balMinor[split.userId] || 0) - allocatedShares[index];
+    });
   });
-  settlements.forEach(s => { if ((s.status || "settled") !== "settled") return; bal[s.from] = (bal[s.from] || 0) + s.amount; bal[s.to] = (bal[s.to] || 0) - s.amount; });
+  settlements.forEach(s => {
+    if ((s.status || "settled") !== "settled") return;
+    const amountMinor = toMinor(s.amount);
+    balMinor[s.from] = (balMinor[s.from] || 0) + amountMinor;
+    balMinor[s.to] = (balMinor[s.to] || 0) - amountMinor;
+  });
+  const bal = Object.fromEntries(
+    Object.entries(balMinor).map(([id, amount]) => [id, fromMinor(amount)]),
+  );
   const breakdown = expenseSummary(expenses.map(e => ({ amount: e.amount, currency: e.currency, amountInBase: e.amountInBase, splits: e.splits })), group.memberIds, group.baseCurrency);
   res.json({ balances: bal, simplified: simplifyDebts(bal, group.simplificationOptOutIds || []), baseCurrency: group.baseCurrency, expenseBreakdown: breakdown });
 });
