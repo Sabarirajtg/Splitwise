@@ -16,6 +16,8 @@ const GroupSchema = new Schema({
   baseCurrency: { type: String, required: true },
   spendingCurrency: { type: String, default: null },
   cashFxRates: { type: Schema.Types.Mixed, default: {} },
+  // Expenses created at or before this timestamp are historical and stay in Activity only.
+  expenseHistoryCutoffAt: { type: Date, default: null },
   memberIds: [{ type: String }],
   createdBy: { type: String },
   simplificationOptOutIds: { type: [String], default: [] },
