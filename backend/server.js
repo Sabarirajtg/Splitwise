@@ -749,9 +749,15 @@ app.put("/api/expenses/:id", async (req, res) => {
     const allSettlements = await Settlement.find({ groupId: group._id });
     const hasOutstandingDebt = (await getGroupSimplifiedBalances(group)).length > 0;
     const cutoff = group.expenseHistoryCutoffAt ? new Date(group.expenseHistoryCutoffAt) : null;
-    const settlementSinceCutoff = allSettlements.some(s => !cutoff || new Date(s.createdAt || s.date) > cutoff);
-    if (hasOutstandingDebt && settlementSinceCutoff) {
-      return res.status(409).json({ error: "Expenses are locked while a group settlement is in progress. Finish or resolve the reported payment before editing or deleting expenses." });
+    const expenseCreatedAt = new Date(expense.createdAt || expense.date).getTime();
+    const settlementTouchesExpense = allSettlements.some((settlement) => {
+      const settlementAt = new Date(settlement.createdAt || settlement.date).getTime();
+      return (!cutoff || settlementAt > cutoff.getTime()) &&
+        Number.isFinite(expenseCreatedAt) && Number.isFinite(settlementAt) &&
+        expenseCreatedAt <= settlementAt;
+    });
+    if (hasOutstandingDebt && settlementTouchesExpense) {
+      return res.status(409).json({ error: "This expense is locked because settlement activity was recorded after it was created. Newer expenses remain editable." });
     }
     if (typeof desc !== "string" || !desc.trim() || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
       return res.status(400).json({ error: "Enter a valid description and amount" });
