@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const {
   toMinor,
   fromMinor,
+  allocateSharesMinor,
   simplifyDebts,
   expenseSummary,
   isDirty,
@@ -81,4 +82,57 @@ test("dirty-state comparison detects changes and reverts", () => {
     isDirty({ base: "INR", spending: "THB" }, original),
     false,
   );
+});
+
+
+test("converted shares always sum to the rounded expense total", () => {
+  const cases = [
+    { total: 8439.19, splits: [{ userId: "a", amount: 1000 }, { userId: "b", amount: 1000 }, { userId: "c", amount: 1000 }] },
+    { total: 3375.67, splits: [{ userId: "a", amount: 400 }, { userId: "b", amount: 400 }, { userId: "c", amount: 400 }] },
+    { total: 2531.76, splits: [{ userId: "a", amount: 300 }, { userId: "b", amount: 300 }, { userId: "c", amount: 300 }] },
+  ];
+
+  for (const { total, splits } of cases) {
+    const shares = allocateSharesMinor(total, splits);
+    assert.equal(shares.reduce((sum, amount) => sum + amount, 0), toMinor(total));
+  }
+});
+
+test("remainder allocation is deterministic for equal splits", () => {
+  const splits = [{ amount: 1 }, { amount: 1 }, { amount: 1 }];
+  assert.deepEqual(allocateSharesMinor(10, splits), [334, 333, 333]);
+  assert.deepEqual(allocateSharesMinor(10, splits), [334, 333, 333]);
+});
+
+test("converted member totals reconcile exactly to the group total", () => {
+  const summary = expenseSummary(
+    [
+      {
+        amount: 3000,
+        currency: "THB",
+        amountInBase: 8439.19,
+        splits: [
+          { userId: "a", amount: 1000 },
+          { userId: "b", amount: 1000 },
+          { userId: "c", amount: 1000 },
+        ],
+      },
+      {
+        amount: 1200,
+        currency: "THB",
+        amountInBase: 3375.67,
+        splits: [
+          { userId: "a", amount: 400 },
+          { userId: "b", amount: 400 },
+          { userId: "c", amount: 400 },
+        ],
+      },
+    ],
+    ["a", "b", "c"],
+    "INR",
+  );
+
+  const memberTotalMinor = Object.values(summary.memberTotals)
+    .reduce((sum, amount) => sum + toMinor(amount), 0);
+  assert.equal(memberTotalMinor, toMinor(summary.groupTotal));
 });

@@ -1741,3 +1741,24 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     padding-left: 9px;
   }
 }
+
+
+/* iOS Safari: prevent form zoom and date/datetime inputs overflowing sheets. */
+input, select, textarea {
+  font-size: 16px;
+  max-width: 100%;
+  min-width: 0;
+}
+input[type="date"],
+input[type="datetime-local"],
+input[type="time"] {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  font-size: 16px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.field, .sheet, .overlay { min-width: 0; }

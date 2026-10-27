@@ -10,6 +10,18 @@ function supportsPush() {
     "Notification" in window;
 }
 
+function isIOSDevice() {
+  return typeof navigator !== "undefined" &&
+    (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+}
+
+function isInstalledPWA() {
+  return typeof window !== "undefined" &&
+    (window.matchMedia("(display-mode: standalone)").matches ||
+      navigator.standalone === true);
+}
+
 function urlBase64ToUint8Array(value) {
   const padding = "=".repeat((4 - value.length % 4) % 4);
   const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -28,6 +40,13 @@ export default function PushNotificationSetup({ userId }) {
     async function checkStatus() {
       if (!supportsPush()) {
         if (active) setStatus("unsupported");
+        return;
+      }
+
+      // On iOS/iPadOS, web push is available only to a Home Screen web app.
+      // Don't show an enable action that cannot work from a normal Safari tab.
+      if (isIOSDevice() && !isInstalledPWA()) {
+        if (active) setStatus("install-required");
         return;
       }
 
@@ -54,25 +73,37 @@ export default function PushNotificationSetup({ userId }) {
     if (busy) return;
     if (!supportsPush()) {
       setStatus("unsupported");
+      showToast("This browser does not support web push notifications.", "error");
+      return;
+    }
+
+    if (isIOSDevice() && !isInstalledPWA()) {
+      setStatus("install-required");
+      showToast("On iPhone or iPad, add SplitShare to your Home Screen and open it there to enable notifications.", "error");
       return;
     }
 
     setBusy(true);
     try {
-      const keyResponse = await api.pushPublicKey();
-      if (!keyResponse.publicKey) throw new Error("Push notifications are not configured on the server yet.");
-
+      // Request permission before any awaited network call. Safari requires
+      // this permission prompt to be initiated directly by the user's tap.
       const permission = await Notification.requestPermission();
       if (permission !== "granted") {
         setStatus(permission === "denied" ? "denied" : "off");
         if (permission === "denied") {
-          showToast("Notifications are blocked for this site. Allow them in your browser settings.", "error");
+          showToast("Notifications are blocked for this site. Allow them in browser settings.", "error");
+        } else {
+          showToast("Notification permission was not granted. Try outside Private Browsing.", "error");
         }
         return;
       }
 
-      const registration = await navigator.serviceWorker.register("/sw.js");
+      const keyResponse = await api.pushPublicKey();
+      if (!keyResponse.publicKey) {
+        throw new Error("Push notifications are not configured on the server yet.");
+      }
 
+      const registration = await navigator.serviceWorker.register("/sw.js");
       let subscription = await registration.pushManager.getSubscription();
       if (!subscription) {
         subscription = await registration.pushManager.subscribe({
@@ -85,7 +116,15 @@ export default function PushNotificationSetup({ userId }) {
       setStatus("enabled");
       showToast("Push notifications enabled");
     } catch (error) {
-      showToast(error.message || "Could not enable push notifications", "error");
+      const message = error && error.message ? error.message : "";
+      const likelyPrivateMode = /private|incognito|not allowed|permission|denied|subscribe|service.?worker/i.test(message);
+      showToast(
+        likelyPrivateMode
+          ? "Safari may block push notifications in Private Browsing. Open SplitShare in a normal Safari tab and try again."
+          : message || "Could not enable push notifications",
+        "error"
+      );
+      setStatus(Notification.permission === "denied" ? "denied" : "off");
     } finally {
       setBusy(false);
     }
@@ -110,14 +149,20 @@ export default function PushNotificationSetup({ userId }) {
     }
   }
 
-  const heading = status === "enabled" ? "Push notifications are on" : "Stay updated with push notifications";
+  const heading = status === "enabled"
+    ? "Push notifications are on"
+    : status === "install-required"
+      ? "Add SplitShare to your Home Screen"
+      : "Stay updated with push notifications";
   const description = status === "enabled"
     ? "You'll get alerts for expenses you're included in and UPI payment updates."
     : status === "denied"
       ? "Notifications are blocked in this browser. Allow them for this site in your browser settings to enable alerts."
       : status === "unsupported"
         ? "This browser does not support web push notifications. Try a recent browser with web push support."
-        : "Get alerts when someone adds an expense involving you or updates a UPI payment—even when SplitShare isn't open.";
+        : status === "install-required"
+          ? "On iPhone or iPad, web push works from SplitShare after you add it to your Home Screen and open the installed app. Private Browsing may also block notifications."
+          : "Get alerts when someone adds an expense involving you or updates a UPI payment—even when SplitShare isn't open.";
 
   return (
     <section className="upi-setup-card push-notification-card" aria-label="Push notification settings">
@@ -133,7 +178,7 @@ export default function PushNotificationSetup({ userId }) {
             </LoadingButton>
           ) : (
             <LoadingButton className="btn-primary" onClick={enableNotifications} loading={busy} disabled={busy || status === "checking" || status === "unsupported" || status === "denied"}>
-              {busy ? "Enabling…" : "Enable push notifications"}
+              {busy ? "Enabling…" : status === "install-required" ? "How to enable on iPhone" : "Enable push notifications"}
             </LoadingButton>
           )}
         </div>
