@@ -1,18 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#8B5CF6"/>
-      <stop offset="100%" stop-color="#D946EF"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.9" y2="1">
+      <stop offset="0%" stop-color="#D946EF"/>
+      <stop offset="52%" stop-color="#A855F7"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+    <linearGradient id="coin" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#E9D5FF"/>
     </linearGradient>
   </defs>
   <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="28">
-    <path d="M170 178h112a54 54 0 0 1 0 108h-36"/>
-    <path d="M342 334H230a54 54 0 0 1 0-108h36"/>
+  <path d="M76 91 99 77 122 91 145 77 168 91 191 77 214 91 237 77 260 91 283 77 306 91 329 77 352 91 375 77 398 91 421 77 444 91 444 282 421 269 398 282 375 269 352 282 329 269 306 282 283 269 260 282 237 269 214 282 191 269 168 282 145 269 122 282 99 269 76 282Z" fill="#FFF" opacity=".97"/>
+  <g fill="#A855F7">
+    <circle cx="166" cy="130" r="32"/>
+    <path d="M109 199c0-30 25-51 57-51s57 21 57 51v12H109Z"/>
+    <circle cx="346" cy="130" r="32"/>
+    <path d="M289 199c0-30 25-51 57-51s57 21 57 51v12H289Z"/>
   </g>
-  <g fill="#fff">
-    <circle cx="155" cy="178" r="38"/>
-    <circle cx="357" cy="334" r="38"/>
-    <circle cx="256" cy="256" r="24"/>
+  <g fill="none" stroke="#C026D3" stroke-width="8" stroke-linecap="round" opacity=".95">
+    <path d="M103 231h20m13 0h20m13 0h20m13 0h20"/>
+    <path d="M289 231h20m13 0h20m13 0h20m13 0h20"/>
   </g>
+  <path d="M267 94 217 194h43l-18 76 68-112h-45l22-64Z" fill="#7C3AED" stroke="#7C3AED" stroke-linejoin="round" stroke-width="5"/>
+  <circle cx="256" cy="357" r="100" fill="#7C3AED" opacity=".55"/>
+  <circle cx="256" cy="345" r="91" fill="url(#coin)" stroke="#FFFFFF" stroke-width="12"/>
+  <circle cx="256" cy="345" r="69" fill="#A855F7"/>
+  <circle cx="256" cy="345" r="60" fill="none" stroke="#F5D0FE" stroke-width="5"/>
+  <text x="256" y="376" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="98" font-weight="700" fill="#FFFFFF">$</text>
 </svg>
