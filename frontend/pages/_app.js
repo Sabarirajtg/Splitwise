@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Head from "next/head";
 import "../styles/globals.css";
 import { SessionProvider } from "next-auth/react";
 import ToastHost from "../components/ToastHost";
@@ -37,11 +38,33 @@ function ThemeToggle() {
 }
 
 export default function App({ Component, pageProps: { session, ...pageProps } }) {
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/sw.js").catch((error) => {
+      console.error("SplitShare service worker registration failed:", error);
+    });
+  }, []);
+
   return (
-    <SessionProvider session={session}>
+    <>
+      <Head>
+        <title>SplitShare</title>
+        <meta name="application-name" content="SplitShare" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="SplitShare" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="theme-color" content="#8B5CF6" />
+        <meta name="description" content="Split group expenses, track balances, and settle up with SplitShare." />
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.svg" />
+      </Head>
+      <SessionProvider session={session}>
       <ThemeToggle />
       <Component {...pageProps} />
       <ToastHost />
-    </SessionProvider>
+      </SessionProvider>
+    </>
   );
 }
