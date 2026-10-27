@@ -217,7 +217,7 @@ app.get("/api/groups/:id", async (req, res) => {
   const members = await User.find({ _id: { $in: group.memberIds } });
   res.json({
     id: group._id, name: group.name, baseCurrency: group.baseCurrency, spendingCurrency: group.spendingCurrency || group.baseCurrency,
-    currencyConfigured: Boolean(group.spendingCurrency), cashFxRates: group.cashFxRates || {}, memberIds: group.memberIds, simplificationOptOutIds: group.simplificationOptOutIds || [], inviteToken: group.inviteToken || null,
+    currencyConfigured: Boolean(group.spendingCurrency), cashFxRates: group.cashFxRates || {}, expenseHistoryCutoffAt: group.expenseHistoryCutoffAt || null, memberIds: group.memberIds, simplificationOptOutIds: group.simplificationOptOutIds || [], inviteToken: group.inviteToken || null,
     members: members.map(m => ({ id: m._id, name: m.name, upiId: m.upiId || null }))
   });
 });
@@ -677,6 +677,29 @@ function rememberCashRate(group, fx) {
   group.cashFxRates = { ...(group.cashFxRates || {}), [fx.rememberedPair]: fx.rate };
 }
 
+async function getGroupSimplifiedBalances(group) {
+  const expenses = await Expense.find({ groupId: group._id });
+  const settlements = await Settlement.find({ groupId: group._id });
+  const balMinor = {};
+  group.memberIds.forEach(id => (balMinor[id] = 0));
+  expenses.forEach(e => {
+    const baseAmount = e.amountInBase != null ? e.amountInBase : e.amount;
+    balMinor[e.paidBy] = (balMinor[e.paidBy] || 0) + toMinor(baseAmount);
+    const allocatedShares = allocateSharesMinor(baseAmount, e.splits || []);
+    (e.splits || []).forEach((split, index) => {
+      balMinor[split.userId] = (balMinor[split.userId] || 0) - allocatedShares[index];
+    });
+  });
+  settlements.forEach(s => {
+    if ((s.status || "settled") !== "settled") return;
+    const amountMinor = toMinor(s.amount);
+    balMinor[s.from] = (balMinor[s.from] || 0) + amountMinor;
+    balMinor[s.to] = (balMinor[s.to] || 0) - amountMinor;
+  });
+  const balances = Object.fromEntries(Object.entries(balMinor).map(([id, amount]) => [id, fromMinor(amount)]));
+  return simplifyDebts(balances, group.simplificationOptOutIds || []);
+}
+
 app.post("/api/groups/:id/expenses", async (req, res) => {
   if (!requireInternal(req, res)) return;
   try {
@@ -723,6 +746,13 @@ app.put("/api/expenses/:id", async (req, res) => {
     if (!group) return res.status(404).json({ error: "Group not found" });
     const { userId, desc, amount, currency, paymentMethod = expense.paymentMethod || "digital", fxRate, paidBy, date, recurring, splitMethod, splits } = req.body || {};
     if (!isGroupMember(group, userId)) return res.status(403).json({ error: "Only group members can update expenses" });
+    const allSettlements = await Settlement.find({ groupId: group._id });
+    const hasOutstandingDebt = (await getGroupSimplifiedBalances(group)).length > 0;
+    const cutoff = group.expenseHistoryCutoffAt ? new Date(group.expenseHistoryCutoffAt) : null;
+    const settlementSinceCutoff = allSettlements.some(s => !cutoff || new Date(s.createdAt || s.date) > cutoff);
+    if (hasOutstandingDebt && settlementSinceCutoff) {
+      return res.status(409).json({ error: "Expenses are locked while a group settlement is in progress. Finish or resolve the reported payment before editing or deleting expenses." });
+    }
     if (typeof desc !== "string" || !desc.trim() || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
       return res.status(400).json({ error: "Enter a valid description and amount" });
     }
@@ -766,6 +796,13 @@ app.delete("/api/expenses/:id", async (req, res) => {
     const group = await Group.findById(expense.groupId);
     if (!group) return res.status(404).json({ error: "Group not found" });
     if (!isGroupMember(group, userId)) return res.status(403).json({ error: "Only group members can remove expenses" });
+    const allSettlements = await Settlement.find({ groupId: group._id });
+    const hasOutstandingDebt = (await getGroupSimplifiedBalances(group)).length > 0;
+    const cutoff = group.expenseHistoryCutoffAt ? new Date(group.expenseHistoryCutoffAt) : null;
+    const settlementSinceCutoff = allSettlements.some(s => !cutoff || new Date(s.createdAt || s.date) > cutoff);
+    if (hasOutstandingDebt && settlementSinceCutoff) {
+      return res.status(409).json({ error: "Expenses are locked while a group settlement is in progress. Finish or resolve the reported payment before editing or deleting expenses." });
+    }
     await notifyExpenseDeleted(group, expense, userId).catch((error) => console.error("Expense deletion notification failed:", error.message));
     await Expense.deleteOne({ _id: expense._id });
     res.json({ ok: true });
@@ -929,6 +966,11 @@ app.post("/api/groups/:groupId/settlements/:settlementId/confirm", async (req, r
   if ((settlement.status || "settled") === "settled") return res.json({ id: settlement._id, status: "settled", confirmedAt: settlement.confirmedAt || settlement.updatedAt });
   settlement.status = "settled"; settlement.confirmedBy = userId; settlement.confirmedAt = new Date(); settlement.issueNote = null;
   await settlement.save();
+  const remainingDebts = await getGroupSimplifiedBalances(group);
+  if (remainingDebts.length === 0) {
+    group.expenseHistoryCutoffAt = settlement.confirmedAt;
+    await group.save();
+  }
   await notifySettlement(group, settlement, settlement.from, userId, "confirmed").catch((error) => console.error("Payment confirmation notification failed:", error.message));
   res.json({ id: settlement._id, status: settlement.status, confirmedAt: settlement.confirmedAt });
 });
