@@ -89,7 +89,7 @@ test("converted shares always sum to the rounded expense total", () => {
   const cases = [
     { total: 8439.19, splits: [{ userId: "a", amount: 1000 }, { userId: "b", amount: 1000 }, { userId: "c", amount: 1000 }] },
     { total: 3375.67, splits: [{ userId: "a", amount: 400 }, { userId: "b", amount: 400 }, { userId: "c", amount: 400 }] },
-    { total: 2520, splits: [{ userId: "a", amount: 300 }, { userId: "b", amount: 300 }, { userId: "c", amount: 300 }] },
+    { total: 2531.76, splits: [{ userId: "a", amount: 300 }, { userId: "b", amount: 300 }, { userId: "c", amount: 300 }] },
   ];
 
   for (const { total, splits } of cases) {
