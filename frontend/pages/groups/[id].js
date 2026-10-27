@@ -752,7 +752,7 @@ function GroupSettings({
         </button>
       )}
 
-      <div
+     {/* <div
         className="divider"
         style={{ margin: "20px 0", borderTop: "1px solid var(--border)" }}
       />
@@ -773,9 +773,9 @@ function GroupSettings({
         />
         Participate in suggested simplification
         {savingSimplification && <span className="button-spinner" role="status" aria-label="Saving preference" />}
-      </label>
+      </label> */}
 
-      <div style={{ marginTop: 12 }}>
+      {/* <div style={{ marginTop: 12 }}>
         {group.members.map((member) => {
           const memberOptedOut = (
             group.simplificationOptOutIds || []
@@ -802,7 +802,7 @@ function GroupSettings({
             </div>
           );
         })}
-      </div>
+      </div> */}
     </div>
   );
 }
