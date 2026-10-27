@@ -369,10 +369,15 @@ export default function GroupDetail() {
 
         {tab === "overview" && <ExpensesOverview group={group} expenses={expenses} user={user} />}
 
-        {tab === "expenses" && (
-          expenses.length === 0
-            ? <div className="empty">No expenses yet.<br />Tap + to add one.</div>
-            : [...expenses].sort((a, b) =>
+        {tab === "expenses" && (() => {
+          const cutoff = group?.expenseHistoryCutoffAt ? new Date(group.expenseHistoryCutoffAt).getTime() : null;
+          const activeExpenses = expenses.filter((expense) => !cutoff || getRecordTimestamp(expense.createdAt, expense.date) > cutoff);
+          const groupHasOpenDebt = Boolean(balData && Array.isArray(balData.simplified) && balData.simplified.length > 0);
+          const cutoffTimestamp = cutoff;
+          const settlementLocksExpenses = groupHasOpenDebt && settlements.some((settlement) => !cutoffTimestamp || getRecordTimestamp(settlement.createdAt, settlement.date) > cutoffTimestamp);
+          return activeExpenses.length === 0
+            ? <div className="empty">No active expenses yet.<br />Settled expenses remain available in Activity.<br />Tap + to add one.</div>
+            : [...activeExpenses].sort((a, b) =>
                 getRecordTimestamp(b.createdAt, b.date) - getRecordTimestamp(a.createdAt, a.date)
               ).map(e => {
               const paidByMe = e.paidBy === user.id;
@@ -382,7 +387,7 @@ export default function GroupDetail() {
               else if (mySplit > 0) sub = <span className="pill pill-coral">you owe {money(mySplit, e.currency)}</span>;
               else sub = <span className="pill pill-neutral">not involved</span>;
               return (
-                <div key={e.id} className="card card-tap" onClick={() => { setEditingExpense(e); setSheet("expense"); }}>
+                <div key={e.id} className={`card ${settlementLocksExpenses ? "" : "card-tap"}`} onClick={() => { if (!settlementLocksExpenses) { setEditingExpense(e); setSheet("expense"); } }}>
                   <div className="row">
                     <div>
                       <h3 style={{ fontSize: 14.5 }}><span aria-hidden="true" style={{ display: "inline-block", width: 26 }}>{expenseIcon(e.desc)}</span>{e.desc}</h3>
@@ -398,10 +403,11 @@ export default function GroupDetail() {
                       <div style={{ marginTop: 4 }}>{sub}</div>
                     </div>
                   </div>
+                  {settlementLocksExpenses && <p className="small muted" style={{ marginTop: 10 }}>Locked while a group payment is awaiting confirmation or has a reported issue.</p>}
                 </div>
               );
-            })
-        )}
+            });
+        })()}
 
         {tab === "balances" && balData && (
           <BalancesTab
@@ -1097,7 +1103,7 @@ function ActivityTab({ expenses, settlements, memberName, user }) {
     <div className="card activity-feed">
       {items.map((item) => item.type === "expense" ? (
         <div className="split-row activity-item activity-expense" key={item.id}>
-          <span className="activity-item-icon" aria-hidden="true">{expenseIcon(item.e.desc)}</span>
+          <span className="activity-item-icon" aria-hidden="true">{expenseIcon(item.e.desc)}{item.e.paymentMethod === "cash" ? " 💵" : ""}</span>
           <div className="activity-item-content">
             <div className="activity-item-description">
               {memberName(item.e.paidBy)} added <b>{item.e.desc}</b>
